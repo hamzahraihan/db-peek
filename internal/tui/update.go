@@ -117,16 +117,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.list, cmd = m.list.Update(msg)
 		return m, cmd
 	}
-	var cmd tea.Cmd
-	switch m.tab {
-	case 0:
-		m.colTable, cmd = m.colTable.Update(msg)
-	case 1:
-		m.idxTable, cmd = m.idxTable.Update(msg)
-	default:
-		m.rowTable, cmd = m.rowTable.Update(msg)
-	}
-	return m, cmd
+	// Nothing else to forward on the detail screen.
+	return m, nil
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -198,6 +190,7 @@ func (m Model) detailKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 	case "esc", "backspace":
 		m.screen = screenTables
 		m.err = ""
+		m.hoverTab = -1
 		return m, nil
 	case "tab", "right", "l":
 		m.setTab((m.tab + 1) % 3)
@@ -240,16 +233,38 @@ func (m Model) detailKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	var cmd tea.Cmd
+	g := m.activeGrid()
+	switch key {
+	case "up", "k":
+		g.MoveUp(1)
+	case "down", "j":
+		g.MoveDown(1)
+	case "pgup":
+		g.MoveUp(g.Height())
+	case "pgdown":
+		g.MoveDown(g.Height())
+	case "ctrl+u":
+		g.MoveUp(g.Height() / 2)
+	case "ctrl+d":
+		g.MoveDown(g.Height() / 2)
+	case "home", "g":
+		g.GotoTop()
+	case "end", "G":
+		g.GotoBottom()
+	}
+	return m, nil
+}
+
+// activeGrid returns the detail tab's grid for cursor movement.
+func (m *Model) activeGrid() *dataTable {
 	switch m.tab {
 	case 0:
-		m.colTable, cmd = m.colTable.Update(msg)
+		return &m.colTable
 	case 1:
-		m.idxTable, cmd = m.idxTable.Update(msg)
+		return &m.idxTable
 	default:
-		m.rowTable, cmd = m.rowTable.Update(msg)
+		return &m.rowTable
 	}
-	return m, cmd
 }
 
 // activateConn connects to a saved profile; shared by enter-key and double-click.
@@ -268,7 +283,7 @@ func (m Model) inspectTable(name string) (Model, tea.Cmd) {
 	m.tab = 0
 	m.loading = true
 	m.err = ""
-	m.cols, m.indexes, m.sample, m.count = nil, nil, nil, -1
 	m.page = 0 // pageSize persists across tables
+	m.hoverTab = -1
 	return m, m.loadDetail(name)
 }
