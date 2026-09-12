@@ -1,62 +1,41 @@
 package tui
 
-// Table builders translate query results into bubbles tables and fit them
+// Table builders translate query results into detail grids and fit them
 // to the terminal. They run after load messages arrive, before View.
 
-import (
-	"github.com/charmbracelet/bubbles/table"
-)
-
 func (m *Model) buildTables() {
-	colCols := []table.Column{
-		{Title: "column", Width: 24}, {Title: "type", Width: 22},
-		{Title: "null", Width: 6}, {Title: "default", Width: 22}, {Title: "extra", Width: 18},
-	}
-	var colRows []table.Row
+	colCols := []string{"column", "type", "null", "default", "extra"}
+	var colRows [][]string
 	for _, c := range m.cols {
-		colRows = append(colRows, table.Row{c.Name, c.Type, c.Nullable, c.Default, c.Extra})
+		colRows = append(colRows, []string{c.Name, c.Type, c.Nullable, c.Default, c.Extra})
 	}
-	m.colTable = table.New(
-		table.WithColumns(colCols), table.WithRows(colRows),
-		table.WithFocused(true), table.WithHeight(12),
-	)
-	m.colTable.SetStyles(dataTableStyles())
+	m.colTable.setData(colCols, colRows)
 
-	idxCols := []table.Column{{Title: "index", Width: 30}, {Title: "unique", Width: 8}, {Title: "columns", Width: 50}}
-	var idxRows []table.Row
+	idxCols := []string{"index", "unique", "columns"}
+	var idxRows [][]string
 	for _, ix := range m.indexes {
-		idxRows = append(idxRows, table.Row{ix.Name, ix.Unique, ix.Columns})
+		idxRows = append(idxRows, []string{ix.Name, ix.Unique, ix.Columns})
 	}
-	m.idxTable = table.New(
-		table.WithColumns(idxCols), table.WithRows(idxRows),
-		table.WithFocused(true), table.WithHeight(12),
-	)
-	m.idxTable.SetStyles(dataTableStyles())
+	m.idxTable.setData(idxCols, idxRows)
 
 	m.buildRowTable()
 }
 
 // buildRowTable rebuilds only the rows tab so paging keeps schema/index cursors.
 func (m *Model) buildRowTable() {
-	var rowCols []table.Column
-	var rowRows []table.Row
+	var rowCols []string
+	var rowRows [][]string
 	if m.sample != nil {
-		for _, c := range m.sample.Columns {
-			rowCols = append(rowCols, table.Column{Title: c, Width: 20})
-		}
+		rowCols = append([]string(nil), m.sample.Columns...)
 		for _, r := range m.sample.Rows {
-			rowRows = append(rowRows, table.Row(r))
+			rowRows = append(rowRows, append([]string(nil), r...))
 		}
 	}
 	if len(rowCols) == 0 {
-		rowCols = []table.Column{{Title: "rows", Width: 40}}
-		rowRows = []table.Row{{"(no rows)"}}
+		rowCols = []string{"rows"}
+		rowRows = [][]string{{"(no rows)"}}
 	}
-	m.rowTable = table.New(
-		table.WithColumns(rowCols), table.WithRows(rowRows),
-		table.WithFocused(true), table.WithHeight(12),
-	)
-	m.rowTable.SetStyles(dataTableStyles())
+	m.rowTable.setData(rowCols, rowRows)
 }
 
 func (m *Model) sizeTables() {
@@ -72,35 +51,15 @@ func (m *Model) sizeTables() {
 	if m.tab == 2 {
 		chrome++ // pager line on the rows tab
 	}
-	if m.selectedIndexDDL() != "" {
-		chrome++ // DDL echo on the indexes tab
+	if m.tab == 1 && m.hasIndexDDL() {
+		chrome++ // DDL echo row on the indexes tab, reserved whenever any
+		// index has DDL so cursor moves never change the layout height
 	}
 	h := m.height - chrome
 	if h < 4 {
 		h = 4
 	}
-	for _, t := range []*table.Model{&m.colTable, &m.idxTable, &m.rowTable} {
-		t.SetWidth(w)
-		t.SetHeight(h)
-		cols := t.Columns()
-		if len(cols) == 0 {
-			continue
-		}
-		// Distribute width across columns; last column takes the slack.
-		per := (w - 4) / len(cols)
-		if per < 8 {
-			per = 8
-		}
-		for i := range cols {
-			if i == len(cols)-1 {
-				cols[i].Width = w - 4 - per*(len(cols)-1)
-				if cols[i].Width < 10 {
-					cols[i].Width = 10
-				}
-			} else {
-				cols[i].Width = per
-			}
-		}
-		t.SetColumns(cols)
-	}
+	m.colTable.Resize(w, h)
+	m.idxTable.Resize(w, h)
+	m.rowTable.Resize(w, h)
 }
