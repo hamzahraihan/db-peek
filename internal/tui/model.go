@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	dbpkg "db-peek/internal/db"
 	"db-peek/internal/saved"
@@ -54,9 +54,9 @@ type Model struct {
 	status   string
 	width    int
 	height   int
-	colTable table.Model
-	idxTable table.Model
-	rowTable table.Model
+	colTable dataTable
+	idxTable dataTable
+	rowTable dataTable
 
 	// Mouse: rows per item in each picker (from the item delegates), plus
 	// last click for double-click detection and hover deduplication.
@@ -67,6 +67,7 @@ type Model struct {
 	lastClickWhere screen
 	lastHoverIdx   int
 	lastHoverWhere screen
+	hoverTab       int // tab under the cursor, -1 when none
 }
 
 func New(connStr string, store *saved.Store) Model {
@@ -110,7 +111,7 @@ func New(connStr string, store *saved.Store) Model {
 
 	m := Model{
 		connStr: strings.TrimSpace(connStr), store: store,
-		conns: cl, list: l, count: -1, pageSize: 10,
+		conns: cl, list: l, count: -1, pageSize: 10, hoverTab: -1,
 		nameInput: nameInput, connInput: connInput,
 		connsItemH:  cdelegate.Height() + cdelegate.Spacing(),
 		tablesItemH: delegate.Height() + delegate.Spacing(),
@@ -197,9 +198,32 @@ func (m Model) selectedIndexDDL() string {
 	return m.indexes[cur].DDL
 }
 
+// hasIndexDDL reports whether any index carries DDL, used to reserve the
+// echo row independent of cursor position.
+func (m Model) hasIndexDDL() bool {
+	for _, ix := range m.indexes {
+		if ix.DDL != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // detailTabLabels renders the tab strip; the rows tab shows the page size.
+// On narrow terminals the labels shrink so the strip never wraps and
+// mouse rows stay aligned. Render and hit-testing share this source.
 func (m Model) detailTabLabels() []string {
-	return []string{"1 schema", "2 indexes", fmt.Sprintf("3 rows ×%d", m.pageSize)}
+	full := []string{"1 schema", "2 indexes", fmt.Sprintf("3 rows ×%d", m.pageSize)}
+	if m.width > 0 {
+		w := 0
+		for _, t := range full {
+			w += lipgloss.Width(inactiveTab.Render(t)) + 1
+		}
+		if w > m.width {
+			return []string{"1", "2", "3"}
+		}
+	}
+	return full
 }
 
 // setTab switches detail tabs and refits the table to the new chrome
