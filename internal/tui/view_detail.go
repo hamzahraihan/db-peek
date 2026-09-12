@@ -3,21 +3,34 @@ package tui
 import (
 	"fmt"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func (m Model) detailView() string {
-	header := titleStyle.Render("db-peek") + " " + dimStyle.Render(m.status)
+	header := m.fitHeader()
 	var b strings.Builder
 	b.WriteString(header + "\n")
-	b.WriteString(titleStyle.Render("⌂ " + m.table))
+	// The title must stay one row for the same reason as the header.
+	title, suffix := "⌂ "+m.table, ""
 	if m.count >= 0 {
-		b.WriteString(dimStyle.Render(fmt.Sprintf("  •  %d rows", m.count)))
+		suffix = fmt.Sprintf("  •  %d rows", m.count)
+	}
+	if m.width > 0 && lipgloss.Width(title+suffix) > m.width {
+		title = "⌂ " + fitText(m.table, m.width-lipgloss.Width("⌂ ")-lipgloss.Width(suffix))
+	}
+	b.WriteString(titleStyle.Render(title))
+	if suffix != "" {
+		b.WriteString(dimStyle.Render(suffix))
 	}
 	b.WriteString("\n\n")
 	for i, t := range m.detailTabLabels() {
-		if i == m.tab {
+		switch {
+		case i == m.tab:
 			b.WriteString(activeTab.Render(t))
-		} else {
+		case i == m.hoverTab:
+			b.WriteString(hoverTab.Render(t))
+		default:
 			b.WriteString(inactiveTab.Render(t))
 		}
 		b.WriteString(" ")
@@ -40,11 +53,15 @@ func (m Model) detailView() string {
 				b.WriteString(m.idxTable.View() + "\n")
 			}
 			// Show full DDL for the selected index when postgres/sqlite provides it.
+			// The row is always rendered while any index has DDL so the
+			// footer below never shifts or clips on cursor moves.
 			if ddl := m.selectedIndexDDL(); ddl != "" {
-				b.WriteString(dimStyle.Render(ddl) + "\n")
+				b.WriteString(dimStyle.Render(fitText(ddl, m.width)) + "\n")
+			} else if m.hasIndexDDL() {
+				b.WriteString("\n")
 			}
 		default:
-			b.WriteString(dimStyle.Render(m.pagerLine()) + "\n")
+			b.WriteString(dimStyle.Render(fitText(m.pagerLine(), m.width)) + "\n")
 			if m.sample == nil || len(m.sample.Rows) == 0 {
 				b.WriteString("(no rows)\n")
 			} else {
@@ -55,6 +72,6 @@ func (m Model) detailView() string {
 	if m.err != "" {
 		b.WriteString(errStyle.Render(m.err) + "\n")
 	}
-	b.WriteString(dimStyle.Render("hover highlights • click tabs • wheel scroll • 1/2/3 tabs • r reload • esc back • q quit (from list)") + "\n")
+	b.WriteString(dimStyle.Render(fitText("hover highlights • click tabs • wheel scroll • 1/2/3 tabs • r reload • esc back • q quit (from list)", m.width)) + "\n")
 	return b.String()
 }
