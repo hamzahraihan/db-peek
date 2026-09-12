@@ -1,0 +1,95 @@
+package tui
+
+// Commands are the side-effecting half of MVU: each returns a tea.Cmd that
+// runs off the UI loop and reports back through a message in msg.go.
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	dbpkg "db-peek/internal/db"
+)
+
+func (m Model) openAndLoad(connStr string) tea.Cmd {
+	return func() tea.Msg {
+		db, err := dbpkg.Open(connStr)
+		if err != nil {
+			return connectMsg{err: err}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := db.Ping(ctx); err != nil {
+			_ = db.Close()
+			return connectMsg{err: fmt.Errorf("connect failed: %w", err)}
+		}
+		names, err := db.ListTables(ctx)
+		if err != nil {
+			_ = db.Close()
+			return connectMsg{err: err}
+		}
+		return connectMsg{db: db, names: names}
+	}
+}
+
+func (m Model) openSaved(name string) tea.Cmd {
+	p, ok := m.store.Get(name)
+	if !ok {
+		return func() tea.Msg { return connectMsg{err: fmt.Errorf("no saved connection %q", name)} }
+	}
+	m.connStr = p.Conn
+	return m.openAndLoad(p.Conn)
+}
+
+func (m Model) loadDetail(table string) tea.Cmd {
+	db := m.db
+	size := m.pageSize
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		cols, err := db.Columns(ctx, table)
+		if err != nil {
+			return detailLoadedMsg{table: table, err: err}
+		}
+		idx, err := db.Indexes(ctx, table)
+		if err != nil {
+			return detailLoadedMsg{table: table, err: err}
+		}
+		sample, err := db.PageRows(ctx, table, size, 0)
+		if err != nil {
+			return detailLoadedMsg{table: table, err: err}
+		}
+		count, err := db.Count(ctx, table)
+		if err != nil {
+			count = -1 // sample still useful; count failure is non-fatal
+		}
+		return detailLoadedMsg{table: table, cols: cols, indexes: idx, sample: sample, count: count}
+	}
+}
+
+// loadRowsPage fetches one page of the current table for the rows tab.
+func (m Model) loadRowsPage() tea.Cmd {
+	db, table, size, page := m.db, m.table, m.pageSize, m.page
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		sample, err := db.PageRows(ctx, table, size, page*size)
+		if err != nil {
+			return rowsPageMsg{err: err}
+		}
+		return rowsPageMsg{sample: sample, page: page}
+	}
+}
+
+// reloadTables refetches the table list for the current database.
+func (m Model) reloadTables() tea.Cmd {
+	db := m.db
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		names, err := db.ListTables(ctx)
+		return tablesLoadedMsg{names: names, err: err}
+	}
+}
