@@ -6,6 +6,9 @@ package tui
 // commands.go performs the DB side effects.
 
 import (
+	"fmt"
+	"os"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"db-peek/internal/saved"
@@ -14,6 +17,9 @@ import (
 // Run starts the fullscreen TUI. An empty connStr opens the saved
 // connection picker instead of connecting directly.
 func Run(connStr string, store *saved.Store) error {
+	if mouseDebug {
+		fmt.Fprintln(os.Stderr, "db-peek: mouse debug log →", mouseLogPath())
+	}
 	m := New(connStr, store)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
