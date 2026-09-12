@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func (m Model) View() string {
@@ -45,7 +46,7 @@ func (m Model) browseView() string {
 		h = len(right)
 	}
 	w := m.sidebarW
-	for i := 0; i < h; i++ {
+	for i := range h {
 		l, r := "", ""
 		if i < len(side) {
 			l = side[i]
@@ -54,14 +55,18 @@ func (m Model) browseView() string {
 			r = right[i]
 		}
 		if lipgloss.Width(l) > w {
-			l = fitText(l, w)
+			l = ansi.Truncate(l, w, "...")
 		}
-		b.WriteString(l + strings.Repeat(" ", w-lipgloss.Width(l)) + "│" + r + "\n")
+		pad := w - lipgloss.Width(l)
+		if pad < 0 {
+			pad = 0
+		}
+		b.WriteString(l + strings.Repeat(" ", pad) + "│" + r + "\n")
 	}
 
 	foot := dimStyle.Render(fitText("sidebar: /filter • enter preview • tab detail • r refresh • c conns • q quit", m.width))
 	if m.loading {
-		foot += "  " + "loading…"
+		foot += "  " + "loading..."
 	}
 	if m.err != "" {
 		foot += "\n" + errStyle.Render(m.err)

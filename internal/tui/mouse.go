@@ -14,9 +14,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// listChromeH is the fixed header above list items: 2 title rows + 2 status rows
-// (bubbles list default styles: TitleBar and StatusBar each pad one blank line).
-const listChromeH = 4
+// listFirstRow is the terminal row of the first picker item: one app
+// header row plus the bubbles list chrome (2 title + 2 status rows).
+// The filter input replaces the title block, so this holds in every
+// filter state (verified against list.View output).
+const listFirstRow = 5
 
 // detailTableTop is the first terminal row of a detail table: header, table
 // title, blank, tabs, blank, then the table itself.
@@ -44,9 +46,12 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	switch m.screen {
 	case screenConns:
-		return m.clickList(msg.Y, screenConns)
+		if msg.Y >= listFirstRow {
+			return m.clickList(msg.Y, screenConns)
+		}
+		return m, nil
 	case screenBrowse:
-		if msg.X < m.paneX() && msg.Y >= listChromeH {
+		if msg.X < m.paneX() && msg.Y >= listFirstRow {
 			return m.clickList(msg.Y, screenBrowse)
 		}
 		if msg.Y == m.tabStripRow() {
@@ -168,14 +173,17 @@ func (m Model) listIndexAtRaw(y int, which screen) (int, bool) {
 		l, itemH = &m.list, m.tablesItemH
 	}
 	if itemH <= 0 {
+		logMouse("  listIndexAtRaw: itemH <= 0 (%d)", itemH)
 		return 0, false
 	}
-	row := y - listChromeH // title(2) + blank(1) + status(1) = 4 chrome rows; first item at y=4
+	row := y - listFirstRow
 	if row < 0 {
+		logMouse("  listIndexAtRaw: row < 0 (y=%d firstRow=%d)", y, listFirstRow)
 		return 0, false
 	}
 	perPage := l.Paginator.PerPage
 	if perPage <= 0 {
+		logMouse("  listIndexAtRaw: perPage <= 0 (%d)", perPage)
 		return 0, false
 	}
 	vis := l.VisibleItems()
@@ -185,6 +193,7 @@ func (m Model) listIndexAtRaw(y int, which screen) (int, bool) {
 		onPage = perPage
 	}
 	if onPage <= 0 || row/itemH >= onPage {
+		logMouse("  listIndexAtRaw: out of range onPage=%d row=%d itemH=%d len(vis)=%d", onPage, row, itemH, len(vis))
 		return 0, false // empty padding
 	}
 	return start + row/itemH, true

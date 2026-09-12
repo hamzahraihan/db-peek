@@ -554,7 +554,7 @@ func truncate(s string, n int) string {
 	if len(r) <= n {
 		return s
 	}
-	return string(r[:n-1]) + "…"
+	return string(r[:n-3]) + "..."
 }
 
 func isMostlyText(b []byte) bool {

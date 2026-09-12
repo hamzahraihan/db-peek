@@ -143,13 +143,25 @@ func (t *dataTable) clampOffset() {
 	t.offset = clamp(t.offset, 0, max)
 }
 
-func (t *dataTable) View() string {
+func (t *dataTable) View() string { return t.view(false) }
+
+// ViewDimmed renders the grid in the muted palette used when focus sits
+// on the sidebar. Layout is identical; only colors change.
+func (t *dataTable) ViewDimmed() string { return t.view(true) }
+
+func (t *dataTable) view(dim bool) string {
+	headerStyle, selectedStyle := dataHeaderStyle, dataSelectedStyle
+	hoverStyle := dataHoverStyle
+	if dim {
+		headerStyle, selectedStyle = dimDataHeaderStyle, dimDataSelectedStyle
+		hoverStyle = lipgloss.NewStyle()
+	}
 	var b strings.Builder
 	cells := make([]string, len(t.cols))
 	for i, c := range t.cols {
 		cells[i] = padCell(c, t.widths[i])
 	}
-	b.WriteString(dataHeaderStyle.Render(strings.Join(cells, "")) + "\n")
+	b.WriteString(headerStyle.Render(strings.Join(cells, "")) + "\n")
 	total := 0
 	for _, w := range t.widths {
 		total += w
@@ -171,9 +183,9 @@ func (t *dataTable) View() string {
 		line := strings.Join(cells, "")
 		switch {
 		case i == t.cursor:
-			line = dataSelectedStyle.Render(line)
+			line = selectedStyle.Render(line)
 		case i == t.hover:
-			line = dataHoverStyle.Render(line)
+			line = hoverStyle.Render(line)
 		}
 		b.WriteString(line + "\n")
 	}

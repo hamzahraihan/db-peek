@@ -5,6 +5,7 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -86,6 +87,19 @@ func New(connStr string, store *saved.Store) Model {
 	connInput.CharLimit = 512
 	connInput.Width = 80
 
+	customFilter := func(term string, targets []string) []list.Rank {
+		if re, err := regexp.Compile("(?i)" + term); err == nil {
+			var ranks []list.Rank
+			for i, target := range targets {
+				if re.MatchString(target) {
+					ranks = append(ranks, list.Rank{Index: i})
+				}
+			}
+			return ranks
+		}
+		return list.DefaultFilter(term, targets)
+	}
+
 	cdelegate := list.NewDefaultDelegate()
 	cdelegate.SetSpacing(0)
 	cstyles := list.NewDefaultItemStyles()
@@ -93,10 +107,11 @@ func New(connStr string, store *saved.Store) Model {
 	cstyles.SelectedDesc = selDesc
 	cdelegate.Styles = cstyles
 	cl := list.New(nil, cdelegate, 0, 0)
-	cl.Title = "Connections  (enter to connect • a to add)"
+	cl.Title = "Connections"
 	cl.SetShowStatusBar(true)
 	cl.SetFilteringEnabled(true)
-	cl.SetShowHelp(true)
+	cl.SetShowHelp(false)
+	cl.Filter = customFilter
 
 	delegate := list.NewDefaultDelegate()
 	delegate.ShowDescription = false
@@ -106,10 +121,11 @@ func New(connStr string, store *saved.Store) Model {
 	tstyles.SelectedDesc = selDesc
 	delegate.Styles = tstyles
 	l := list.New(nil, delegate, 0, 0)
-	l.Title = "Tables  (type to filter • enter to inspect)"
+	l.Title = "Tables"
 	l.SetShowStatusBar(true)
 	l.SetFilteringEnabled(true)
-	l.SetShowHelp(true)
+	l.SetShowHelp(false)
+	l.Filter = customFilter
 
 	m := Model{
 		connStr: strings.TrimSpace(connStr), store: store,
@@ -132,7 +148,7 @@ func (m *Model) refreshConns() {
 	profiles := m.store.List()
 	items := make([]list.Item, len(profiles))
 	for i, p := range profiles {
-		items[i] = connItem{name: p.Name, masked: saved.Mask(p.Conn)}
+		items[i] = connItem{name: p.Name, masked: saved.Mask(p.Conn), icon: connIcon}
 	}
 	m.conns.SetItems(items)
 }
@@ -215,7 +231,7 @@ func (m Model) hasIndexDDL() bool {
 // On narrow terminals the labels shrink so the strip never wraps and
 // mouse rows stay aligned. Render and hit-testing share this source.
 func (m Model) detailTabLabels() []string {
-	full := []string{"1 schema", "2 indexes", fmt.Sprintf("3 rows ×%d", m.pageSize)}
+	full := []string{"1 schema", "2 indexes", fmt.Sprintf("3 rows x%d", m.pageSize)}
 	if m.width > 0 {
 		w := 0
 		for _, t := range full {

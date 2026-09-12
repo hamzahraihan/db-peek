@@ -9,9 +9,9 @@ var (
 	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
 	dimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	errStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
-	activeTab   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).Background(lipgloss.Color("4")).Padding(0, 2)
-	inactiveTab = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Padding(0, 2)
-	hoverTab    = lipgloss.NewStyle().Underline(true).Bold(true).Foreground(lipgloss.Color("14")).Padding(0, 2)
+	activeTab   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Background(lipgloss.Color("#005FD7")).Padding(0, 2)
+	inactiveTab = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Background(lipgloss.Color("236")).Padding(0, 2)
+	hoverTab    = lipgloss.NewStyle().Underline(true).Bold(true).Foreground(lipgloss.Color("#00D7FF")).Background(lipgloss.Color("236")).Padding(0, 2)
 	// Line highlighter: the selected row anywhere (pickers, data tables).
 	selTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230")).Background(lipgloss.Color("62")).Padding(0, 1)
 	selDesc  = lipgloss.NewStyle().Foreground(lipgloss.Color("254")).Background(lipgloss.Color("62")).Padding(0, 1)
@@ -25,6 +25,15 @@ var (
 	dataHoverStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("236"))
 )
 
+// Dim variants for the detail pane when focus sits on the sidebar.
+// Same layout, muted palette, so the eye is drawn to the focused pane.
+var (
+	dimTitleStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	dimActiveTabStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("8")).Background(lipgloss.Color("238")).Padding(0, 2)
+	dimDataHeaderStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	dimDataSelectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Background(lipgloss.Color("236"))
+)
+
 // fitText truncates s to w terminal cells so a rendered line can never
 // wrap: a wrapped header would push every row below it down one line and
 // desync mouse coordinates, which are row-exact. A non-positive w means
@@ -33,18 +42,18 @@ func fitText(s string, w int) string {
 	if w <= 0 || lipgloss.Width(s) <= w {
 		return s
 	}
-	if w <= 1 {
-		return "…"
+	if w <= 3 {
+		return "..."[:w]
 	}
 	runes := []rune(s)
 	width := 0
 	i := 0
 	for ; i < len(runes); i++ {
 		rw := lipgloss.Width(string(runes[i]))
-		if width+rw > w-1 {
+		if width+rw > w-3 {
 			break
 		}
 		width += rw
 	}
-	return string(runes[:i]) + "…"
+	return string(runes[:i]) + "..."
 }

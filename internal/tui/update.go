@@ -37,7 +37,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = ""
 		items := make([]list.Item, len(msg.names))
 		for i, n := range msg.names {
-			items[i] = tableItem{name: n}
+			items[i] = tableItem{name: n, icon: tableIcon}
 		}
 		m.list.SetItems(items)
 		m.status = fmt.Sprintf("%d tables • %s (%s)", len(items), m.db.Display, m.db.Driver)
@@ -54,7 +54,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		items := make([]list.Item, len(msg.names))
 		for i, n := range msg.names {
-			items[i] = tableItem{name: n}
+			items[i] = tableItem{name: n, icon: tableIcon}
 		}
 		m.list.SetItems(items)
 		return m, nil
@@ -173,6 +173,13 @@ func (m *Model) disconnect() {
 
 // sidebarKeys handles keys on the browse sidebar.
 func (m Model) sidebarKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+	// While the filter input is focused, every keystroke belongs to the
+	// filter: single-letter sidebar actions (r/c/...) must not hijack typing.
+	if m.list.SettingFilter() {
+		var cmd tea.Cmd
+		m.list, cmd = m.list.Update(msg)
+		return m, cmd
+	}
 	switch key {
 	case "enter":
 		sel, ok := m.list.SelectedItem().(tableItem)

@@ -15,7 +15,7 @@ func (m Model) formView() string {
 	}
 	b.WriteString(fieldLabel("name", m.formFocus == 0) + "\n")
 	b.WriteString(m.nameInput.View() + "\n\n")
-	b.WriteString(fieldLabel("connection  (postgres://… • mysql://… • ./app.db)", m.formFocus == 1) + "\n")
+	b.WriteString(fieldLabel("connection  (postgres://... • mysql://... • ./app.db)", m.formFocus == 1) + "\n")
 	b.WriteString(m.connInput.View() + "\n\n")
 	if m.err != "" {
 		b.WriteString(errStyle.Render(m.err) + "\n")

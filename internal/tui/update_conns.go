@@ -11,6 +11,14 @@ import (
 
 // connsKey drives the saved-connection picker.
 func (m Model) connsKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+	// While the filter input is focused, every keystroke belongs to the
+	// filter: single-letter actions (a/e/d/...) must not hijack typing.
+	if m.conns.SettingFilter() {
+		m.delArm = ""
+		var cmd tea.Cmd
+		m.conns, cmd = m.conns.Update(msg)
+		return m, cmd
+	}
 	switch key {
 	case "q":
 		if m.conns.IsFiltered() || m.conns.FilterInput.Focused() {

@@ -31,7 +31,7 @@ func TestViewLinesFitTerminal(t *testing.T) {
 
 func TestBrowseViewRendersTableData(t *testing.T) {
 	m := browseModel(t)
-	m.list.SetItems([]list.Item{tableItem{"users"}, tableItem{"orders"}})
+	m.list.SetItems([]list.Item{tableItem{name: "users", icon: tableIcon}, tableItem{name: "orders", icon: tableIcon}})
 	m.table = "users"
 	m.cols = []dbpkg.Column{
 		{Name: "id", Type: "integer", Nullable: "NO", Default: "auto", Extra: "pk"},
