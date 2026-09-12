@@ -15,14 +15,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		// Header line + footer block (foot + optional err/status lines).
-		top := m.height - 4
-		if top < 5 {
-			top = 5
-		}
-		m.list.SetSize(msg.Width-4, top)
-		m.conns.SetSize(msg.Width-4, top)
-		m.sizeTables()
+		m.resizeBrowse()
+		m.conns.SetSize(msg.Width-4, m.contentH())
 		return m, nil
 
 	case connectMsg:
@@ -38,7 +32,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.db = msg.db
-		m.screen = screenTables
+		m.screen = screenBrowse
+		m.focusDetail = false
 		m.err = ""
 		items := make([]list.Item, len(msg.names))
 		for i, n := range msg.names {
@@ -46,7 +41,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.list.SetItems(items)
 		m.status = fmt.Sprintf("%d tables • %s (%s)", len(items), m.db.Display, m.db.Driver)
-		return m, nil
+		if len(msg.names) == 0 {
+			return m, nil
+		}
+		return m.inspectTable(msg.names[0])
 
 	case tablesLoadedMsg:
 		m.loading = false
@@ -62,6 +60,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case detailLoadedMsg:
+		if msg.seq != m.detailSeq {
+			return m, nil // superseded by a newer selection
+		}
 		m.loading = false
 		if msg.err != nil {
 			m.err = msg.err.Error()
@@ -79,6 +80,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case rowsPageMsg:
+		if msg.seq != m.detailSeq {
+			return m, nil // superseded by a newer selection
+		}
 		m.loading = false
 		if msg.err != nil {
 			m.err = msg.err.Error()
@@ -97,7 +101,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
 	}
-
 	// Route updates to the focused component.
 	switch m.screen {
 	case screenConns:
@@ -112,15 +115,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.connInput, cmd = m.connInput.Update(msg)
 		}
 		return m, cmd
-	case screenTables:
-		var cmd tea.Cmd
-		m.list, cmd = m.list.Update(msg)
-		return m, cmd
+	case screenBrowse:
+		if !m.focusDetail {
+			var cmd tea.Cmd
+			m.list, cmd = m.list.Update(msg)
+			return m, cmd
+		}
 	}
-	// Nothing else to forward on the detail screen.
 	return m, nil
 }
-
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	if key == "ctrl+c" {
@@ -135,29 +138,41 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.connsKey(msg, key)
 	case screenForm:
 		return m.formKey(msg, key)
-	case screenTables:
-		switch key {
-		case "q":
-			if m.list.IsFiltered() || m.list.FilterInput.Focused() {
-				break // list consumes it
-			}
+	case screenBrowse:
+		// q quits unless the sidebar filter is being typed into.
+		if key == "q" && !m.list.IsFiltered() && !m.list.FilterInput.Focused() {
 			if m.db != nil {
 				_ = m.db.Close()
 			}
 			return m, tea.Quit
 		}
-	}
-
-	switch m.screen {
-	case screenTables:
-		return m.tablesKey(msg, key)
-	default: // detail
+		// tab jumps between sidebar and detail.
+		if key == "tab" || key == "shift+tab" {
+			m.focusDetail = !m.focusDetail
+			return m, nil
+		}
+		if !m.focusDetail {
+			return m.sidebarKeys(msg, key)
+		}
 		return m.detailKey(msg, key)
 	}
+	return m, nil
 }
 
-// tablesKey handles keys on the table picker.
-func (m Model) tablesKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+// disconnect closes the database and returns to the picker.
+func (m *Model) disconnect() {
+	if m.db != nil {
+		_ = m.db.Close()
+		m.db = nil
+	}
+	m.screen = screenConns
+	m.focusDetail = false
+	m.err = ""
+	m.refreshConns()
+}
+
+// sidebarKeys handles keys on the browse sidebar.
+func (m Model) sidebarKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "enter":
 		sel, ok := m.list.SelectedItem().(tableItem)
@@ -169,14 +184,10 @@ func (m Model) tablesKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		m.loading = true
 		return m, m.reloadTables()
 	case "c":
-		// Disconnect back to the connection picker.
-		if m.db != nil {
-			_ = m.db.Close()
-			m.db = nil
-		}
-		m.screen = screenConns
-		m.err = ""
-		m.refreshConns()
+		m.disconnect()
+		return m, nil
+	case "esc":
+		m.disconnect()
 		return m, nil
 	}
 	var cmd tea.Cmd
@@ -188,7 +199,7 @@ func (m Model) tablesKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 func (m Model) detailKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc", "backspace":
-		m.screen = screenTables
+		m.focusDetail = false
 		m.err = ""
 		m.hoverTab = -1
 		return m, nil
@@ -268,22 +279,26 @@ func (m *Model) activeGrid() *dataTable {
 }
 
 // activateConn connects to a saved profile; shared by enter-key and double-click.
+// activateConn connects to a saved profile; shared by enter-key and double-click.
 func (m Model) activateConn(name string) (Model, tea.Cmd) {
 	m.delArm = ""
-	m.screen = screenTables
+	m.screen = screenBrowse
+	m.focusDetail = false
 	m.loading = true
 	m.err = ""
 	return m, m.openSaved(name)
 }
 
-// inspectTable opens the detail view for one table; shared by enter-key and double-click.
+// inspectTable previews one table in the detail pane; shared by sidebar
+// enter/click. The seq guard drops replies from superseded selections.
 func (m Model) inspectTable(name string) (Model, tea.Cmd) {
-	m.screen = screenDetail
+	m.focusDetail = true
 	m.table = name
 	m.tab = 0
 	m.loading = true
 	m.err = ""
 	m.page = 0 // pageSize persists across tables
 	m.hoverTab = -1
+	m.detailSeq++
 	return m, m.loadDetail(name)
 }

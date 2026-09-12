@@ -45,13 +45,19 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch m.screen {
 	case screenConns:
 		return m.clickList(msg.Y, screenConns)
-	case screenTables:
-		return m.clickList(msg.Y, screenTables)
+	case screenBrowse:
+		if msg.X < m.paneX() && msg.Y >= listChromeH {
+			return m.clickList(msg.Y, screenBrowse)
+		}
+		if msg.Y == m.tabStripRow() {
+			return m.clickTabs(msg.X-m.paneX(), msg.Y)
+		}
+		return m.clickTable(msg.Y)
 	case screenForm:
 		return m.clickForm(msg.Y)
 	default:
 		if msg.Y == m.tabStripRow() {
-			return m.clickTabs(msg.X, msg.Y)
+			return m.clickTabs(msg.X-m.paneX(), msg.Y)
 		}
 		return m.clickTable(msg.Y)
 	}
@@ -77,42 +83,46 @@ func (m Model) wheel(n int) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	case screenTables:
-		for range steps {
-			if up {
-				m.list.CursorUp()
-			} else {
-				m.list.CursorDown()
+	case screenBrowse:
+		if !m.focusDetail {
+			for range steps {
+				if up {
+					m.list.CursorUp()
+				} else {
+					m.list.CursorDown()
+				}
+			}
+		} else {
+			switch m.tab {
+			case 0:
+				if up {
+					m.colTable.MoveUp(steps)
+				} else {
+					m.colTable.MoveDown(steps)
+				}
+			case 1:
+				if up {
+					m.idxTable.MoveUp(steps)
+				} else {
+					m.idxTable.MoveDown(steps)
+				}
+			default:
+				if up {
+					m.rowTable.MoveUp(steps)
+				} else {
+					m.rowTable.MoveDown(steps)
+				}
 			}
 		}
 		return m, nil
-	default: // detail: scroll the active tab's table
-		switch m.tab {
-		case 0:
-			if up {
-				m.colTable.MoveUp(steps)
-			} else {
-				m.colTable.MoveDown(steps)
-			}
-		case 1:
-			if up {
-				m.idxTable.MoveUp(steps)
-			} else {
-				m.idxTable.MoveDown(steps)
-			}
-		default:
-			if up {
-				m.rowTable.MoveUp(steps)
-			} else {
-				m.rowTable.MoveDown(steps)
-			}
-		}
+	default: // conns-adjacent safety; browse handled above
 		return m, nil
 	}
 }
 
-// clickList maps a click row to a picker item: single click selects,
-// double-click opens. Items are top-anchored right below the 4 chrome rows.
+// clickList maps a click row to a picker item. Connections need a
+// double-click to connect (accidental-connect guard); browse sidebar
+// rows preview immediately — the detail pane is cheap and fast.
 func (m Model) clickList(y int, which screen) (tea.Model, tea.Cmd) {
 	idx, ok := m.listIndexAt(y, which)
 	if !ok {
@@ -125,16 +135,16 @@ func (m Model) clickList(y int, which screen) (tea.Model, tea.Cmd) {
 		l = &m.list
 	}
 	l.Select(idx)
-	if which == m.lastClickWhere && idx == m.lastClickIdx && time.Since(m.lastClickAt) < 500*time.Millisecond {
-		m.lastClickAt = time.Time{}
-		if which == screenConns {
-			if sel, ok := l.SelectedItem().(connItem); ok {
-				return m.activateConn(sel.name)
-			}
-			return m, nil
-		}
+	if which == screenBrowse {
 		if sel, ok := l.SelectedItem().(tableItem); ok {
 			return m.inspectTable(sel.name)
+		}
+		return m, nil
+	}
+	if which == m.lastClickWhere && idx == m.lastClickIdx && time.Since(m.lastClickAt) < 500*time.Millisecond {
+		m.lastClickAt = time.Time{}
+		if sel, ok := l.SelectedItem().(connItem); ok {
+			return m.activateConn(sel.name)
 		}
 		return m, nil
 	}
@@ -160,7 +170,7 @@ func (m Model) listIndexAtRaw(y int, which screen) (int, bool) {
 	if itemH <= 0 {
 		return 0, false
 	}
-	row := y - 1 - listChromeH // -1 for our header line
+	row := y - listChromeH // title(2) + blank(1) + status(1) = 4 chrome rows; first item at y=4
 	if row < 0 {
 		return 0, false
 	}
@@ -189,11 +199,18 @@ func (m Model) hover(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch m.screen {
 	case screenConns:
 		return m.hoverList(msg.Y, screenConns)
-	case screenTables:
-		return m.hoverList(msg.Y, screenTables)
+	case screenBrowse:
+		if msg.X < m.paneX() {
+			return m.hoverList(msg.Y, screenBrowse)
+		}
+		m.hoverTab = -1
+		if msg.Y == m.tabStripRow() {
+			return m.hoverTabs(msg.X - m.paneX()), nil
+		}
+		return m.hoverTable(msg.Y)
 	default:
 		if msg.Y == m.tabStripRow() {
-			return m.hoverTabs(msg.X), nil
+			return m.hoverTabs(msg.X - m.paneX()), nil
 		}
 		m.hoverTab = -1
 		return m.hoverTable(msg.Y)

@@ -44,7 +44,7 @@ func (m Model) formKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		m.nameInput.Blur()
 		m.connInput.Blur()
 		m.connStr = conn
-		m.screen = screenTables
+		m.screen = screenBrowse
 		m.loading = true
 		m.err = ""
 		return m, m.openAndLoad(conn)

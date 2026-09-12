@@ -15,11 +15,13 @@ type (
 		indexes []dbpkg.Index
 		sample  *dbpkg.Sample
 		count   int64
+		seq     int // detailSeq at request time; stale replies are dropped
 		err     error
 	}
 	rowsPageMsg struct {
 		sample *dbpkg.Sample
 		page   int
+		seq    int
 		err    error
 	}
 	connectMsg struct {

@@ -3,7 +3,11 @@ package tui
 // View is the Elm view function: Model -> string. Pure rendering only —
 // no state changes. Dispatches to one renderer per screen.
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 func (m Model) View() string {
 	switch m.screen {
@@ -11,10 +15,8 @@ func (m Model) View() string {
 		return m.connsView()
 	case screenForm:
 		return m.formView()
-	case screenTables:
-		return m.tablesView()
 	default:
-		return m.detailView()
+		return m.browseView()
 	}
 }
 
@@ -29,15 +31,43 @@ func (m Model) fitHeader() string {
 	return titleStyle.Render("db-peek") + " " + dimStyle.Render(status)
 }
 
-func (m Model) tablesView() string {
-	header := m.fitHeader()
-	body := m.list.View()
-	foot := dimStyle.Render(fitText("↑↓/wheel navigate • hover/click select • 2×click inspect • / filter • r refresh • c conns • q quit", m.width))
+// browseView renders the split layout: sidebar table list (left) and
+// table detail (right). The separator is one column, and detail content
+// is padded to it so rows in both panes share terminal rows.
+func (m Model) browseView() string {
+	var b strings.Builder
+	b.WriteString(m.fitHeader() + "\n")
+
+	side := strings.Split(m.list.View(), "\n")
+	right := strings.Split(m.detailView(), "\n")
+	h := len(side)
+	if len(right) > h {
+		h = len(right)
+	}
+	w := m.sidebarW
+	for i := 0; i < h; i++ {
+		l, r := "", ""
+		if i < len(side) {
+			l = side[i]
+		}
+		if i < len(right) {
+			r = right[i]
+		}
+		if lipgloss.Width(l) > w {
+			l = fitText(l, w)
+		}
+		b.WriteString(l + strings.Repeat(" ", w-lipgloss.Width(l)) + "│" + r + "\n")
+	}
+
+	foot := dimStyle.Render(fitText("sidebar: /filter • enter preview • tab detail • r refresh • c conns • q quit", m.width))
 	if m.loading {
 		foot += "  " + "loading…"
 	}
 	if m.err != "" {
 		foot += "\n" + errStyle.Render(m.err)
 	}
-	return header + "\n" + body + "\n" + foot
+	b.WriteString(foot)
+	return b.String()
 }
+
+// detailView renders the right pane: title, tabs, and grid (view_detail.go).

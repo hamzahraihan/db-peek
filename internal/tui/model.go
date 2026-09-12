@@ -22,8 +22,7 @@ type screen int
 const (
 	screenConns screen = iota
 	screenForm
-	screenTables
-	screenDetail
+	screenBrowse // sidebar table list + detail preview in one split
 )
 
 type Model struct {
@@ -40,23 +39,26 @@ type Model struct {
 	formFocus int    // 0 name, 1 conn
 	editing   string // profile being edited, "" when adding
 
-	list     list.Model
-	tab      int // 0 schema, 1 indexes, 2 rows
-	table    string
-	cols     []dbpkg.Column
-	indexes  []dbpkg.Index
-	sample   *dbpkg.Sample
-	count    int64
-	page     int // 0-based page in the rows tab
-	pageSize int // rows per page: one of pageSizes
-	loading  bool
-	err      string
-	status   string
-	width    int
-	height   int
-	colTable dataTable
-	idxTable dataTable
-	rowTable dataTable
+	list        list.Model
+	focusDetail bool // browse split: sidebar list vs detail pane
+	sidebarW    int  // sidebar width in cells, set on resize
+	tab         int  // 0 schema, 1 indexes, 2 rows
+	table       string
+	cols        []dbpkg.Column
+	indexes     []dbpkg.Index
+	sample      *dbpkg.Sample
+	count       int64
+	page        int // 0-based page in the rows tab
+	pageSize    int // rows per page: one of pageSizes
+	detailSeq   int // guards against stale async detail/page loads
+	loading     bool
+	err         string
+	status      string
+	width       int
+	height      int
+	colTable    dataTable
+	idxTable    dataTable
+	rowTable    dataTable
 
 	// Mouse: rows per item in each picker (from the item delegates), plus
 	// last click for double-click detection and hover deduplication.
@@ -120,7 +122,7 @@ func New(connStr string, store *saved.Store) Model {
 	if m.connStr == "" {
 		m.screen = screenConns
 	} else {
-		m.screen = screenTables
+		m.screen = screenBrowse
 		m.loading = true
 	}
 	return m

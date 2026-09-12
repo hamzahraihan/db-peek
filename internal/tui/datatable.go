@@ -42,6 +42,7 @@ func (t *dataTable) setData(cols []string, rows [][]string) {
 	}
 	t.hover = -1
 	t.clampOffset()
+
 }
 
 func (t *dataTable) Resize(w, totalH int) {
@@ -117,6 +118,7 @@ func (t *dataTable) Height() int      { return t.height }
 func (t *dataTable) SetHover(n int) {
 	if n < 0 || n >= len(t.rows) {
 		t.hover = -1
+		t.clampOffset()
 		return
 	}
 	t.hover = n

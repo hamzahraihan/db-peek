@@ -28,18 +28,24 @@ import (
 	"db-peek/internal/tui"
 )
 
+// appVersion identifies the build; bump on user-visible changes so stale
+// binaries (e.g. a project-local db-peek.exe shadowing the install) are
+// diagnosable via --version.
+const appVersion = "0.6.0"
+
 func main() {
 	var (
-		dbFlag  = flag.String("db", "", "connection string (postgres://, mysql://, sqlite path)")
-		listF   = flag.Bool("list", false, "print table names and exit")
-		schemaF = flag.String("schema", "", "print columns + indexes for TABLE and exit")
-		rowsF   = flag.String("rows", "", "print N rows of TABLE and exit (see --limit/--offset)")
-		queryF  = flag.String("query", "", "run SELECT SQL and exit")
-		limitF  = flag.Int("limit", 10, "row limit for --rows")
-		offsetF = flag.Int("offset", 0, "rows to skip for --rows")
-		saveF   = flag.String("save", "", "save the connection as NAME and exit")
-		forgetF = flag.String("forget", "", "delete saved connection NAME and exit")
-		connsF  = flag.Bool("conns", false, "list saved connections and exit")
+		dbFlag   = flag.String("db", "", "connection string (postgres://, mysql://, sqlite path)")
+		listF    = flag.Bool("list", false, "print table names and exit")
+		schemaF  = flag.String("schema", "", "print columns + indexes for TABLE and exit")
+		rowsF    = flag.String("rows", "", "print N rows of TABLE and exit (see --limit/--offset)")
+		queryF   = flag.String("query", "", "run SELECT SQL and exit")
+		limitF   = flag.Int("limit", 10, "row limit for --rows")
+		offsetF  = flag.Int("offset", 0, "rows to skip for --rows")
+		saveF    = flag.String("save", "", "save the connection as NAME and exit")
+		forgetF  = flag.String("forget", "", "delete saved connection NAME and exit")
+		connsF   = flag.Bool("conns", false, "list saved connections and exit")
+		versionF = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Usage = func() {
 		fmt.Fprint(os.Stderr, `db-peek — peek at databases from the terminal
@@ -68,6 +74,11 @@ or a saved NAME. Env DATABASE_URL fills conn when no argument is given.
 		os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
 	}
 	flag.Parse()
+
+	if *versionF {
+		fmt.Println("db-peek " + appVersion)
+		return
+	}
 
 	store, err := saved.Load()
 	if err != nil {

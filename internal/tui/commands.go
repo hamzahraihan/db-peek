@@ -46,40 +46,42 @@ func (m Model) openSaved(name string) tea.Cmd {
 func (m Model) loadDetail(table string) tea.Cmd {
 	db := m.db
 	size := m.pageSize
+	seq := m.detailSeq
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		cols, err := db.Columns(ctx, table)
 		if err != nil {
-			return detailLoadedMsg{table: table, err: err}
+			return detailLoadedMsg{table: table, err: err, seq: seq}
 		}
 		idx, err := db.Indexes(ctx, table)
 		if err != nil {
-			return detailLoadedMsg{table: table, err: err}
+			return detailLoadedMsg{table: table, err: err, seq: seq}
 		}
 		sample, err := db.PageRows(ctx, table, size, 0)
 		if err != nil {
-			return detailLoadedMsg{table: table, err: err}
+			return detailLoadedMsg{table: table, err: err, seq: seq}
 		}
 		count, err := db.Count(ctx, table)
 		if err != nil {
 			count = -1 // sample still useful; count failure is non-fatal
 		}
-		return detailLoadedMsg{table: table, cols: cols, indexes: idx, sample: sample, count: count}
+		return detailLoadedMsg{table: table, cols: cols, indexes: idx, sample: sample, count: count, seq: seq}
 	}
 }
 
 // loadRowsPage fetches one page of the current table for the rows tab.
 func (m Model) loadRowsPage() tea.Cmd {
 	db, table, size, page := m.db, m.table, m.pageSize, m.page
+	seq := m.detailSeq
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		sample, err := db.PageRows(ctx, table, size, page*size)
 		if err != nil {
-			return rowsPageMsg{err: err}
+			return rowsPageMsg{err: err, seq: seq}
 		}
-		return rowsPageMsg{sample: sample, page: page}
+		return rowsPageMsg{sample: sample, page: page, seq: seq}
 	}
 }
 

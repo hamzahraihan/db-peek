@@ -38,16 +38,44 @@ func (m *Model) buildRowTable() {
 	m.rowTable.setData(rowCols, rowRows)
 }
 
-func (m *Model) sizeTables() {
-	w := m.width - 8
-	if w < 40 {
+// contentH is the split content height shared by sidebar and detail:
+// terminal minus header, footer, and the always-rendered error reserve.
+func (m Model) contentH() int {
+	h := m.height - 3
+	if h < 5 {
+		h = 5
+	}
+	return h
+}
+
+// resizeBrowse fits the sidebar and detail grids to the terminal.
+// The sidebar takes a fixed slice; detail gets the remainder.
+func (m *Model) resizeBrowse() {
+	w := 30
+	if m.width < 72 {
+		w = m.width / 2
+	}
+	if w < 16 {
+		w = 16
+	}
+	if w > 40 {
 		w = 40
 	}
-	// Fill the terminal: header, table title, blank, tabs, blank, footer.
-	chrome := 6
-	if m.err != "" {
-		chrome++ // error line
+	m.sidebarW = w
+	m.list.SetSize(w, m.contentH())
+	m.sizeTables()
+}
+
+// paneX is the first terminal column of the detail pane (after sidebar + separator).
+func (m Model) paneX() int { return m.sidebarW + 1 }
+
+func (m *Model) sizeTables() {
+	w := m.width - m.paneX() - 2
+	if w < 20 {
+		w = 20
 	}
+	// Detail column: title, blank, tabs, blank, then the grid.
+	chrome := 4
 	if m.tab == 2 {
 		chrome++ // pager line on the rows tab
 	}
@@ -55,9 +83,9 @@ func (m *Model) sizeTables() {
 		chrome++ // DDL echo row on the indexes tab, reserved whenever any
 		// index has DDL so cursor moves never change the layout height
 	}
-	h := m.height - chrome
-	if h < 4 {
-		h = 4
+	h := m.contentH() - chrome
+	if h < 3 {
+		h = 3
 	}
 	m.colTable.Resize(w, h)
 	m.idxTable.Resize(w, h)
