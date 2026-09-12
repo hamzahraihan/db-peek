@@ -1,0 +1,5 @@
+*.exe
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
