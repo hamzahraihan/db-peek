@@ -64,8 +64,8 @@ func TestExplorerRenderGoldSelection(t *testing.T) {
 	if !strings.Contains(out, "explorer") {
 		t.Fatalf("missing header:\n%s", out)
 	}
-	if !strings.Contains(out, "48;5;178m") {
-		t.Fatalf("sidebar selection must use gold bg 178, got:\n%s", out)
+	if !strings.Contains(out, "48;5;172m") {
+		t.Fatalf("sidebar selection must use gold bg 172 (#CA8A04), got:\n%s", out)
 	}
 	if !strings.Contains(out, "4.0k") || !strings.Contains(out, "integer") {
 		t.Fatalf("missing count/type:\n%s", out)
