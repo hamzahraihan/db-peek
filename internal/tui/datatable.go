@@ -186,7 +186,7 @@ func (t *dataTable) view(dim bool) string {
 			line = selectedStyle.Render(line)
 		case i == t.hover:
 			line = hoverStyle.Render(line)
-		case i%2 == 0:
+		case i%2 == 1:
 			if dim {
 				line = zebraDimStyle.Render(line)
 			} else {
