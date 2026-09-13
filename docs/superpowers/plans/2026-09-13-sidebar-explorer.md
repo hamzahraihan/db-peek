@@ -534,8 +534,8 @@ func TestExplorerRenderGoldSelection(t *testing.T) {
 	if !strings.Contains(out, "explorer") {
 		t.Fatalf("missing header:\n%s", out)
 	}
-	if !strings.Contains(out, "48;5;178m") {
-		t.Fatalf("sidebar selection must use gold bg 178, got:\n%s", out)
+	if !strings.Contains(out, "48;5;172m") {
+		t.Fatalf("sidebar selection must use gold bg 172 (#CA8A04), got:\n%s", out)
 	}
 	if !strings.Contains(out, "4.0k") || !strings.Contains(out, "integer") {
 		t.Fatalf("missing count/type:\n%s", out)
@@ -912,7 +912,7 @@ Expected: FAIL on old tests referencing `m.list` / `tablesItemH` / `listIndexAtR
 
 - [ ] **Step 2: Fix remaining references**
 
-Replace in `sidebar_test.go` / `update_conns.go` / `view_fit_test.go`: `m.list.SelectedItem().(tableItem)` → `m.explorer.RowAt(m.explorer.Cursor)`; `tablesItemH` → delete; `listIndexAtRaw` sidebar tests → `explorerRowAt` equivalents; keep `TestDetailDimFollowsFocus`, `TestBrowseViewFitsTerminal`, `TestBrowseViewSidebarFitsWidth` asserting gold `48;5;178m` in sidebar and `lipgloss.Width <= sidebarW`.
+Replace in `sidebar_test.go` / `update_conns.go` / `view_fit_test.go`: `m.list.SelectedItem().(tableItem)` → `m.explorer.RowAt(m.explorer.Cursor)`; `tablesItemH` → delete; `listIndexAtRaw` sidebar tests → `explorerRowAt` equivalents; keep `TestDetailDimFollowsFocus`, `TestBrowseViewFitsTerminal`, `TestBrowseViewSidebarFitsWidth` asserting gold `48;5;172m` (#CA8A04) in sidebar and `lipgloss.Width <= sidebarW`.
 
 - [ ] **Step 3: Run vet + full suite**
 
@@ -931,5 +931,5 @@ git commit -m "test: explorer regression sweep green"
 ## Self-Review (ran before save)
 
 1. Spec coverage: layout/counts/types/gold selection/footer → Task 3; schema/count/columns DB → Task 1; lazy async + cache + seq guard → Task 4; keyboard+mouse+filter → Tasks 4–5; errors (`?`, collapse, empty) → Tasks 3–4 Render/Update; files list → all tasks; tests → Tasks 1–3 + 6. No gaps.
-2. Placeholder scan: no TBD/TODO/generic handling; every step has exact code, exact `go test`/`git` commands, exact styles (`#CA8A04`, `48;5;178m`).
+2. Placeholder scan: no TBD/TODO/generic handling; every step has exact code, exact `go test`/`git` commands, exact styles (`#CA8A04` → `48;5;172m`).
 3. Type consistency: `TableRef`, `Explorer/Row/RowKind/TableNode/SchemaNode/ColumnNode`, `humanizeCount`, `Render(sidebarW,height)`, `NewExplorer`, `schemasLoadedMsg/tableCountMsg/columnsLoadedMsg`, `loadSchemas/loadOneCount/loadColumns` spelled identically across tasks.
