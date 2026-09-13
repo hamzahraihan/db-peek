@@ -170,6 +170,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sizeTables()
 		return m, nil
 
+	case queryDoneMsg:
+		if msg.seq != m.querySeq {
+			return m, nil // superseded by a newer run
+		}
+		m.loading = false
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil // keep editor text + old results
+		}
+		m.querySample = msg.sample
+		m.queryMs = msg.ms
+		m.err = ""
+		var qcols []string
+		var qrows [][]string
+		if msg.sample != nil {
+			qcols = append([]string(nil), msg.sample.Columns...)
+			for _, r := range msg.sample.Rows {
+				qrows = append(qrows, append([]string(nil), r...))
+			}
+		}
+		if len(qcols) == 0 {
+			qcols = []string{"rows"}
+			qrows = [][]string{{"(no rows)"}}
+		}
+		m.queryTable.setData(qcols, qrows)
+		m.sizeTables()
+		return m, nil
+
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 
@@ -208,8 +236,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case screenForm:
 		return m.formKey(msg, key)
 	case screenBrowse:
-		// q quits unless the sidebar filter is being typed into.
-		if key == "q" && m.explorer.Filter == "" {
+		// q quits unless the sidebar filter is being typed into or the
+		// query editor has focus (there it inserts the rune).
+		if key == "q" && m.explorer.Filter == "" && !(m.focusDetail && m.tab == 3 && m.queryFocus == 0) {
 			if m.db != nil {
 				_ = m.db.Close()
 			}
@@ -299,8 +328,16 @@ func (m Model) sidebarKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// detailKey handles keys on the schema/indexes/rows tabs.
+// detailKey handles keys on the schema/indexes/rows/query/er tabs.
+// Tabs 3 (query) and 4 (er) route to their own handlers first so editing
+// runes never trigger the schema/indexes/rows bindings below.
 func (m Model) detailKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+	if m.tab == 3 {
+		return m.queryKeys(msg, key)
+	}
+	if m.tab == 4 {
+		return m.erKeys(msg, key)
+	}
 	switch key {
 	case "esc", "backspace":
 		m.focusDetail = false
@@ -308,10 +345,10 @@ func (m Model) detailKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		m.hoverTab = -1
 		return m, nil
 	case "tab", "right", "l":
-		m.setTab((m.tab + 1) % 3)
+		m.setTab((m.tab + 1) % 5)
 		return m, nil
 	case "shift+tab", "left", "h":
-		m.setTab((m.tab + 2) % 3)
+		m.setTab((m.tab + 4) % 5)
 		return m, nil
 	case "1":
 		m.setTab(0)
@@ -321,6 +358,12 @@ func (m Model) detailKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "3":
 		m.setTab(2)
+		return m, nil
+	case "4":
+		m.setTab(3)
+		return m, nil
+	case "5":
+		m.setTab(4)
 		return m, nil
 	case "r":
 		m.loading = true
@@ -368,6 +411,165 @@ func (m Model) detailKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		g.GotoBottom()
 	}
 	return m, nil
+}
+
+// queryKeys handles keys on the query tab (tab 3). With the editor
+// focused every typed rune inserts; esc steps focus editor → results →
+// sidebar. With results focused the grid moves and 1-5/r switch/rerun.
+func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+	if m.queryFocus == 0 {
+		switch key {
+		case "esc":
+			m.queryFocus = 1
+			return m, nil
+		case "ctrl+r", "f5":
+			m.querySeq++
+			return m, m.runQuery()
+		case "enter":
+			m.editor.Newline()
+			m.clampEditorScroll()
+			return m, nil
+		case "backspace":
+			m.editor.Backspace()
+			m.clampEditorScroll()
+			return m, nil
+		case "delete":
+			m.editor.Delete()
+			return m, nil
+		case "up":
+			m.editor.MoveUp()
+			m.clampEditorScroll()
+			return m, nil
+		case "down":
+			m.editor.MoveDown()
+			m.clampEditorScroll()
+			return m, nil
+		case "left":
+			m.editor.MoveLeft()
+			m.clampEditorScroll()
+			return m, nil
+		case "right":
+			m.editor.MoveRight()
+			m.clampEditorScroll()
+			return m, nil
+		case "home":
+			m.editor.Home()
+			return m, nil
+		case "end":
+			m.editor.End()
+			return m, nil
+		}
+		if msg.Type == tea.KeyRunes {
+			for _, r := range msg.Runes {
+				m.editor.Insert(r)
+			}
+			m.clampEditorScroll()
+			return m, nil
+		}
+		return m, nil
+	}
+	switch key {
+	case "esc", "backspace":
+		m.focusDetail = false
+		m.err = ""
+		m.hoverTab = -1
+		return m, nil
+	case "tab", "right", "l":
+		m.setTab((m.tab + 1) % 5)
+		return m, nil
+	case "shift+tab", "left", "h":
+		m.setTab((m.tab + 4) % 5)
+		return m, nil
+	case "1":
+		m.setTab(0)
+		return m, nil
+	case "2":
+		m.setTab(1)
+		return m, nil
+	case "3":
+		m.setTab(2)
+		return m, nil
+	case "4":
+		m.setTab(3)
+		return m, nil
+	case "5":
+		m.setTab(4)
+		return m, nil
+	case "ctrl+r", "f5", "r":
+		m.querySeq++
+		return m, m.runQuery()
+	case "e":
+		m.queryFocus = 0
+		m.clampEditorScroll()
+		return m, nil
+	}
+	g := &m.queryTable
+	switch key {
+	case "up", "k":
+		g.MoveUp(1)
+	case "down", "j":
+		g.MoveDown(1)
+	case "pgup":
+		g.MoveUp(g.Height())
+	case "pgdown":
+		g.MoveDown(g.Height())
+	case "ctrl+u":
+		g.MoveUp(g.Height() / 2)
+	case "ctrl+d":
+		g.MoveDown(g.Height() / 2)
+	case "home", "g":
+		g.GotoTop()
+	case "end", "G":
+		g.GotoBottom()
+	}
+	return m, nil
+}
+
+// erKeys is the Task 6 placeholder for the er tab (tab 4): tab switching
+// works, cursor motion is a noop until the diagram lands.
+func (m Model) erKeys(_ tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "esc", "backspace":
+		m.focusDetail = false
+		m.err = ""
+		m.hoverTab = -1
+		return m, nil
+	case "tab", "right", "l":
+		m.setTab((m.tab + 1) % 5)
+		return m, nil
+	case "shift+tab", "left", "h":
+		m.setTab((m.tab + 4) % 5)
+		return m, nil
+	case "1":
+		m.setTab(0)
+		return m, nil
+	case "2":
+		m.setTab(1)
+		return m, nil
+	case "3":
+		m.setTab(2)
+		return m, nil
+	case "4":
+		m.setTab(3)
+		return m, nil
+	case "5":
+		m.setTab(4)
+		return m, nil
+	}
+	return m, nil
+}
+
+// clampEditorScroll keeps the cursor inside the 8-row editor viewport.
+func (m *Model) clampEditorScroll() {
+	if m.editor.CurLine < m.editor.OffY {
+		m.editor.OffY = m.editor.CurLine
+	}
+	if m.editor.CurLine >= m.editor.OffY+queryEditorH {
+		m.editor.OffY = m.editor.CurLine - queryEditorH + 1
+	}
+	if m.editor.OffY < 0 {
+		m.editor.OffY = 0
+	}
 }
 
 // activeGrid returns the detail tab's grid for cursor movement.

@@ -354,6 +354,25 @@ func TestPaneClickSwitchesFocus(t *testing.T) {
 	}
 }
 
+func TestQueryRunSeqGuard(t *testing.T) {
+	m := browseModel(t)
+	m.table = "users"
+	m.tab = 3
+	m.querySeq = 5
+	stale := queryDoneMsg{sql: "select 1", seq: 4, sample: &db.Sample{Columns: []string{"a"}, Rows: [][]string{{"1"}}}}
+	u, _ := m.Update(stale)
+	m = u.(Model)
+	if m.querySample != nil {
+		t.Fatal("stale query reply must not apply")
+	}
+	fresh := queryDoneMsg{sql: "select 1", seq: 5, sample: &db.Sample{Columns: []string{"a"}, Rows: [][]string{{"1"}}}, ms: 3}
+	u, _ = m.Update(fresh)
+	m = u.(Model)
+	if m.querySample == nil || m.queryMs != 3 {
+		t.Fatal("fresh query reply must apply")
+	}
+}
+
 func TestFocusedBorderGold(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.ANSI256)
 	defer lipgloss.SetColorProfile(termenv.Ascii)

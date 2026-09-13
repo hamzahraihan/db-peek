@@ -42,4 +42,11 @@ type (
 		columns []dbpkg.Column
 		err     error
 	}
+	queryDoneMsg struct {
+		sql    string
+		sample *dbpkg.Sample
+		ms     int64
+		seq    int
+		err    error
+	}
 )

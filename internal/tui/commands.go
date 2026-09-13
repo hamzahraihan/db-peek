@@ -116,6 +116,17 @@ func (m Model) loadOneCount(schema, table string) tea.Cmd {
 	}
 }
 
+func (m Model) runQuery() tea.Cmd {
+	db, sql, seq := m.db, m.editor.Text(), m.querySeq
+	return func() tea.Msg {
+		start := time.Now()
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		s, err := db.Query(ctx, sql)
+		return queryDoneMsg{sql: sql, sample: s, ms: time.Since(start).Milliseconds(), seq: seq, err: err}
+	}
+}
+
 // loadColumns resolves table names within the connection's default
 // schema/search_path (consistent with the ApproxCount parked ruling):
 // the schema arg scopes explorer state only; db.Columns takes a plain

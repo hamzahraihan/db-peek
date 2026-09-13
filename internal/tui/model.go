@@ -61,6 +61,13 @@ type Model struct {
 	idxTable    dataTable
 	rowTable    dataTable
 
+	editor      Editor
+	queryFocus  int // 0 editor, 1 results (only meaningful when tab==3)
+	querySample *dbpkg.Sample
+	queryMs     int64
+	querySeq    int
+	queryTable  dataTable
+
 	// Mouse: rows per item in each picker (from the item delegates), plus
 	// last click for double-click detection and hover deduplication.
 	connsItemH     int
@@ -117,6 +124,7 @@ func New(connStr string, store *saved.Store) Model {
 		conns: cl, explorer: NewExplorer("", []string{}), count: -1, pageSize: 10, hoverTab: -1,
 		nameInput: nameInput, connInput: connInput,
 		connsItemH: cdelegate.Height() + cdelegate.Spacing(),
+		editor:     NewEditor(),
 	}
 	m.refreshConns()
 	if m.connStr == "" {
@@ -215,14 +223,14 @@ func (m Model) hasIndexDDL() bool {
 // On narrow terminals the labels shrink so the strip never wraps and
 // mouse rows stay aligned. Render and hit-testing share this source.
 func (m Model) detailTabLabels() []string {
-	full := []string{"1 schema", "2 indexes", fmt.Sprintf("3 rows x%d", m.pageSize)}
+	full := []string{"1 schema", "2 indexes", fmt.Sprintf("3 rows x%d", m.pageSize), "4 query", "5 er"}
 	if m.width > 0 {
 		w := 0
 		for _, t := range full {
 			w += lipgloss.Width(inactiveTab.Render(t)) + 1
 		}
 		if w > m.width {
-			return []string{"1", "2", "3"}
+			return []string{"1", "2", "3", "4", "5"}
 		}
 	}
 	return full

@@ -83,7 +83,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			if msg.Y == m.tabStripRow() {
 				return m.clickTabs(msg.X-m.paneX()-1, msg.Y)
 			}
-			return m.clickTable(msg.Y)
+			return m.clickTable(msg.X-m.paneX()-1, msg.Y)
 		}
 		return m, nil // gap, right margin, footer: noop
 	case screenForm:
@@ -92,7 +92,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if msg.Y == m.tabStripRow() {
 			return m.clickTabs(msg.X-m.paneX()-1, msg.Y)
 		}
-		return m.clickTable(msg.Y)
+		return m.clickTable(msg.X-m.paneX()-1, msg.Y)
 	}
 }
 
@@ -139,6 +139,22 @@ func (m Model) wheel(n int) (tea.Model, tea.Cmd) {
 				} else {
 					m.idxTable.MoveDown(steps)
 				}
+			case 3:
+				if m.queryFocus == 0 {
+					m.editor.OffY += n
+					if m.editor.OffY < 0 {
+						m.editor.OffY = 0
+					}
+					if max := len(m.editor.Lines) - queryEditorH; max > 0 && m.editor.OffY > max {
+						m.editor.OffY = max
+					}
+				} else if up {
+					m.queryTable.MoveUp(steps)
+				} else {
+					m.queryTable.MoveDown(steps)
+				}
+			case 4:
+				// ER placeholder: nothing to scroll until Task 6.
 			default:
 				if up {
 					m.rowTable.MoveUp(steps)
@@ -330,6 +346,23 @@ func (m Model) hoverList(y int, which screen) (tea.Model, tea.Cmd) {
 // content cannot shift under a stationary mouse. Hover is separate from
 // selection: keyboard context (cursor, DDL echo) is untouched.
 func (m Model) hoverTable(y int) (tea.Model, tea.Cmd) {
+	if m.tab == 3 {
+		if y >= detailTableTop && y < detailTableTop+queryEditorH {
+			m.queryTable.SetHover(-1)
+			return m, nil
+		}
+		abs, ok := m.queryTable.RowAt(y - queryResultsTop())
+		if !ok {
+			m.queryTable.SetHover(-1)
+			return m, nil
+		}
+		logMouse("  hoverTable y=%d -> hover %d", y, abs)
+		m.queryTable.SetHover(abs)
+		return m, nil
+	}
+	if m.tab == 4 {
+		return m, nil // ER placeholder: nothing to hover until Task 6
+	}
 	var t *dataTable
 	switch m.tab {
 	case 0:
@@ -353,8 +386,15 @@ func (m Model) hoverTable(y int) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// clickTable selects the data row under the cursor.
-func (m Model) clickTable(y int) (tea.Model, tea.Cmd) {
+// clickTable selects the data row under the cursor. x is the border-relative
+// content column (msg.X - paneX - 1); only the query editor uses it.
+func (m Model) clickTable(x, y int) (tea.Model, tea.Cmd) {
+	if m.tab == 3 {
+		return m.clickQuery(x, y)
+	}
+	if m.tab == 4 {
+		return m, nil // ER placeholder until Task 6
+	}
 	var t *dataTable
 	switch m.tab {
 	case 0:
@@ -374,6 +414,40 @@ func (m Model) clickTable(y int) (tea.Model, tea.Cmd) {
 	}
 	logMouse("  clickTable y=%d -> select %d", y, abs)
 	t.SetCursor(abs)
+	return m, nil
+}
+
+// clickQuery routes query-tab clicks: editor rows position the cursor and
+// take editor focus; results grid rows select and take results focus.
+func (m Model) clickQuery(x, y int) (tea.Model, tea.Cmd) {
+	if rel := y - detailTableTop; rel >= 0 && rel < queryEditorH {
+		m.queryFocus = 0
+		line := m.editor.OffY + rel
+		if line < 0 {
+			line = 0
+		}
+		if line > len(m.editor.Lines)-1 {
+			line = len(m.editor.Lines) - 1
+		}
+		m.editor.CurLine = line
+		col := x - 3 // gutter: "%2d " line numbers
+		if col < 0 {
+			col = 0
+		}
+		if max := len([]rune(m.editor.Lines[m.editor.CurLine])); col > max {
+			col = max
+		}
+		m.editor.CurCol = col
+		logMouse("  clickQuery editor y=%d -> line %d col %d", y, line, col)
+		return m, nil
+	}
+	abs, ok := m.queryTable.RowAt(y - queryResultsTop())
+	if !ok {
+		return m, nil
+	}
+	logMouse("  clickQuery results y=%d -> select %d", y, abs)
+	m.queryFocus = 1
+	m.queryTable.SetCursor(abs)
 	return m, nil
 }
 

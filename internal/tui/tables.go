@@ -97,4 +97,13 @@ func (m *Model) sizeTables() {
 	m.colTable.Resize(w, h)
 	m.idxTable.Resize(w, h)
 	m.rowTable.Resize(w, h)
+	if m.tab == 3 {
+		// Query tab: title+blank+tabs+blank+editor(8)+status(2); the
+		// results grid takes the remainder. (Task 6 adjusts tab 4.)
+		qh := m.contentH() - 2 - (4 + queryEditorH + 2)
+		if qh < 3 {
+			qh = 3
+		}
+		m.queryTable.Resize(w, qh)
+	}
 }
