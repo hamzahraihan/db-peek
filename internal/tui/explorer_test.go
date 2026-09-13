@@ -1,6 +1,12 @@
 package tui
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+)
 
 func fixtureExplorer() Explorer {
 	e := NewExplorer("shop", []string{"public"})
@@ -47,5 +53,26 @@ func TestFilterKeepsParents(t *testing.T) {
 	rows := e.VisibleRows()
 	if len(rows) != 2 {
 		t.Fatalf("want schema+customers, got %v", rows)
+	}
+}
+
+func TestExplorerRenderGoldSelection(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+	e := fixtureExplorer()
+	out := e.Render(34, 20)
+	if !strings.Contains(out, "explorer") {
+		t.Fatalf("missing header:\n%s", out)
+	}
+	if !strings.Contains(out, "48;5;178m") {
+		t.Fatalf("sidebar selection must use gold bg 178, got:\n%s", out)
+	}
+	if !strings.Contains(out, "4.0k") || !strings.Contains(out, "integer") {
+		t.Fatalf("missing count/type:\n%s", out)
+	}
+	for _, ln := range strings.Split(out, "\n") {
+		if lipgloss.Width(ln) > 34 {
+			t.Fatalf("line exceeds width: %q", ln)
+		}
 	}
 }

@@ -57,3 +57,13 @@ func fitText(s string, w int) string {
 	}
 	return string(runes[:i]) + "..."
 }
+
+// Explorer styles for the sidebar tree (Task 3). Gold selection #CA8A04,
+// cyan-dim column types, muted counts, bright connection header.
+var (
+	explorerTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#EAB308"))
+	explorerSel   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#000000")).Background(lipgloss.Color("178")) // 178 ~= #CA8A04 gold; hex #CA8A04 quantizes to 172 under ANSI256, so use 178 to hit spec'd 48;5;178m
+	explorerType  = lipgloss.NewStyle().Foreground(lipgloss.Color("#67E8F9"))
+	explorerCount = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	explorerConn  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
+)

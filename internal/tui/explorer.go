@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 type RowKind int
@@ -177,4 +179,101 @@ func humanizeCount(n int64) string {
 	default:
 		return fmt.Sprintf("%d", n)
 	}
+}
+
+func (e *Explorer) tableByName(schema, table string) (TableNode, bool) {
+	for _, s := range e.Schemas {
+		if s.Name != schema {
+			continue
+		}
+		for _, tb := range s.Tables {
+			if tb.Name == table {
+				return tb, true
+			}
+		}
+	}
+	return TableNode{}, false
+}
+
+func (e *Explorer) columnByName(schema, table, col string) (ColumnNode, bool) {
+	tb, ok := e.tableByName(schema, table)
+	if !ok {
+		return ColumnNode{}, false
+	}
+	for _, c := range tb.Columns {
+		if c.Name == col {
+			return c, true
+		}
+	}
+	return ColumnNode{}, false
+}
+
+func (e *Explorer) Render(sidebarW, height int) string {
+	rows := e.VisibleRows()
+	var b strings.Builder
+	b.WriteString(explorerTitle.Render("explorer") + "\n")
+	conn := "● " + e.ConnName
+	b.WriteString(explorerConn.Render(fitText(conn, sidebarW-2)) + "\n")
+	var lines []string
+	for i, r := range rows {
+		var left, right string
+		switch r.Kind {
+		case RowSchema:
+			disc := "▸"
+			for _, s := range e.Schemas {
+				if s.Name == r.Schema && s.Expanded {
+					disc = "▾"
+				}
+			}
+			n := 0
+			for _, s := range e.Schemas {
+				if s.Name == r.Schema {
+					n = len(s.Tables)
+				}
+			}
+			left = disc + " 🗄 " + r.Schema
+			right = explorerCount.Render(fmt.Sprintf("%d", n))
+		case RowTable:
+			tb, _ := e.tableByName(r.Schema, r.Table)
+			disc := "▸"
+			if tb.Expanded {
+				disc = "▾"
+			}
+			icon := "▦"
+			if tb.IsView {
+				icon = "👁"
+			}
+			left = "  " + disc + " " + icon + " " + r.Table
+			if tb.CountOK {
+				right = explorerCount.Render(humanizeCount(tb.Count))
+			} else {
+				right = explorerCount.Render("…")
+			}
+		case RowColumn:
+			c, _ := e.columnByName(r.Schema, r.Table, r.Column)
+			icon := "◇"
+			if c.IsPK {
+				icon = "🔑"
+			} else if c.IsFK {
+				icon = "➤"
+			}
+			left = "    " + icon + " " + r.Column
+			right = explorerType.Render(c.DataType)
+		}
+		gap := sidebarW - lipgloss.Width(left) - lipgloss.Width(right) - 1
+		if gap < 1 {
+			gap = 1
+		}
+		line := left + strings.Repeat(" ", gap) + right
+		line = fitText(line, sidebarW)
+		if i == e.Cursor {
+			line = explorerSel.Render(line)
+		}
+		lines = append(lines, line)
+	}
+	if height > 0 && len(lines) > height {
+		lines = lines[:height]
+	}
+	b.WriteString(strings.Join(lines, "\n"))
+	return b.String()
 }
