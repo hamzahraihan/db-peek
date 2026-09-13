@@ -51,8 +51,11 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case screenBrowse:
-		if msg.X < m.paneX() && msg.Y >= listFirstRow {
-			return m.clickList(msg.Y, screenBrowse)
+		if msg.X < m.paneX() {
+			if msg.Y >= explorerFirstRow {
+				return m.clickExplorer(msg.X, msg.Y)
+			}
+			return m, nil // sidebar chrome (title/conn/separator): no-op
 		}
 		if msg.Y == m.tabStripRow() {
 			return m.clickTabs(msg.X-m.paneX(), msg.Y)
@@ -92,9 +95,9 @@ func (m Model) wheel(n int) (tea.Model, tea.Cmd) {
 		if !m.focusDetail {
 			for range steps {
 				if up {
-					m.list.CursorUp()
+					m.explorer.MoveUp()
 				} else {
-					m.list.CursorDown()
+					m.explorer.MoveDown()
 				}
 			}
 		} else {
@@ -125,27 +128,17 @@ func (m Model) wheel(n int) (tea.Model, tea.Cmd) {
 	}
 }
 
-// clickList maps a click row to a picker item. Connections need a
-// double-click to connect (accidental-connect guard); browse sidebar
-// rows preview immediately — the detail pane is cheap and fast.
+// clickList maps a click row to a conns picker item. Connections need a
+// double-click to connect (accidental-connect guard). Browse sidebar
+// clicks are handled by clickExplorer; the screenBrowse path here is
+// retired (Task 6 removes it fully).
 func (m Model) clickList(y int, which screen) (tea.Model, tea.Cmd) {
 	idx, ok := m.listIndexAt(y, which)
 	if !ok {
 		return m, nil
 	}
-	var l *list.Model
-	if which == screenConns {
-		l = &m.conns
-	} else {
-		l = &m.list
-	}
+	l := &m.conns
 	l.Select(idx)
-	if which == screenBrowse {
-		if sel, ok := l.SelectedItem().(tableItem); ok {
-			return m.inspectTable(sel.name)
-		}
-		return m, nil
-	}
 	if which == m.lastClickWhere && idx == m.lastClickIdx && time.Since(m.lastClickAt) < 500*time.Millisecond {
 		m.lastClickAt = time.Time{}
 		if sel, ok := l.SelectedItem().(connItem); ok {
@@ -155,6 +148,39 @@ func (m Model) clickList(y int, which screen) (tea.Model, tea.Cmd) {
 	}
 	m.lastClickWhere, m.lastClickIdx, m.lastClickAt = which, idx, time.Now()
 	return m, nil
+}
+
+// clickExplorer maps a sidebar click row to an explorer tree row.
+// Schema rows toggle collapse; table rows toggle and preview in the
+// detail pane (columns load + inspect); column rows preview their table.
+// Clicks on sidebar chrome (title/conn/separator) are no-ops — disconnect
+// stays on c/esc keys.
+func (m Model) clickExplorer(x, y int) (tea.Model, tea.Cmd) {
+	idx := y - explorerFirstRow
+	r, ok := m.explorer.RowAt(idx)
+	if !ok {
+		logMouse("  clickExplorer x=%d y=%d -> miss", x, y)
+		return m, nil
+	}
+	m.explorer.Cursor = idx
+	switch r.Kind {
+	case RowSchema:
+		logMouse("  clickExplorer x=%d y=%d -> toggle schema %s", x, y, r.Schema)
+		m.explorer.Toggle()
+		return m, nil
+	case RowTable:
+		logMouse("  clickExplorer x=%d y=%d -> preview table %s", x, y, r.Table)
+		m.explorer.Toggle()
+		colCmd := m.loadColumns(r.Schema, r.Table)
+		m2, inspectCmd := m.inspectTable(r.Table)
+		m = m2
+		return m, tea.Batch(colCmd, inspectCmd)
+	case RowColumn:
+		logMouse("  clickExplorer x=%d y=%d -> preview column %s.%s", x, y, r.Table, r.Column)
+		return m.inspectTable(r.Table)
+	default:
+		return m, nil
+	}
 }
 
 // listIndexAt resolves a terminal row to a global item index in a picker.
@@ -246,6 +272,15 @@ func (m Model) tabAtX(x int) int {
 }
 
 func (m Model) hoverList(y int, which screen) (tea.Model, tea.Cmd) {
+	if which == screenBrowse {
+		// Sidebar hover follows the explorer cursor; no preview.
+		idx := y - explorerFirstRow
+		if _, ok := m.explorer.RowAt(idx); !ok {
+			return m, nil
+		}
+		m.explorer.Cursor = idx
+		return m, nil
+	}
 	idx, ok := m.listIndexAt(y, which)
 	if !ok {
 		return m, nil
@@ -254,11 +289,7 @@ func (m Model) hoverList(y int, which screen) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.lastHoverWhere, m.lastHoverIdx = which, idx
-	if which == screenConns {
-		m.conns.Select(idx)
-	} else {
-		m.list.Select(idx)
-	}
+	m.conns.Select(idx)
 	return m, nil
 }
 

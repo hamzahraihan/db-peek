@@ -51,18 +51,17 @@ func (m Model) contentH() int {
 // resizeBrowse fits the sidebar and detail grids to the terminal.
 // The sidebar takes a fixed slice; detail gets the remainder.
 func (m *Model) resizeBrowse() {
-	w := 30
+	w := 34
 	if m.width < 72 {
 		w = m.width / 2
 	}
-	if w < 16 {
-		w = 16
+	if w < 20 {
+		w = 20
 	}
-	if w > 40 {
-		w = 40
+	if w > 44 {
+		w = 44
 	}
 	m.sidebarW = w
-	m.list.SetSize(w, m.contentH())
 	m.sizeTables()
 }
 

@@ -6,7 +6,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
@@ -23,9 +22,7 @@ func browseModel(t *testing.T) Model {
 	m.width, m.height = 100, 30
 	m.db = &db.DB{Driver: db.SQLite, Display: "test"}
 	m.explorer = fixtureExplorer()
-	m.list.SetItems([]list.Item{tableItem{name: "users", icon: tableIcon}, tableItem{name: "orders", icon: tableIcon}})
 	m.resizeBrowse()
-	m.list.SetSize(30, 20)
 	return m
 }
 
@@ -43,29 +40,42 @@ func TestTableCountMsgApplies(t *testing.T) {
 	}
 }
 
-func TestSidebarClickPreviewsInDetail(t *testing.T) {
+func TestExplorerClickPreviews(t *testing.T) {
 	m := browseModel(t)
-	m.list.SetItems([]list.Item{tableItem{name: "users", icon: tableIcon}, tableItem{name: "orders", icon: tableIcon}})
-	// First item sits at y=5 (1 header row + 4 list chrome rows).
+	m.explorer = fixtureExplorer()
+	m.loading = false
 	u, cmd := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 5})
 	m = u.(Model)
-	if cmd == nil || m.table != "users" || !m.focusDetail || m.detailSeq != 1 {
-		t.Fatalf("want users previewed seq 1, got %q seq %d focus=%v", m.table, m.detailSeq, m.focusDetail)
+	if cmd == nil || m.table != "orders" {
+		t.Fatalf("want orders previewed, got %q", m.table)
+	}
+}
+
+func TestSidebarClickPreviewsInDetail(t *testing.T) {
+	m := browseModel(t)
+	// Fixture rows: 0=schema public, 1=orders, 2=col id, 3=col status,
+	// 4=customers. First tree row lands at explorerFirstRow=4, so
+	// orders sits at y=5 and customers at y=8.
+	u, cmd := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 5})
+	m = u.(Model)
+	if cmd == nil || m.table != "orders" || !m.focusDetail || m.detailSeq != 1 {
+		t.Fatalf("want orders previewed seq 1, got %q seq %d focus=%v", m.table, m.detailSeq, m.focusDetail)
 	}
 	// Second click on another row previews it immediately: table updates
-	// and the seq bumps so the stale users reply is ignored on arrival.
+	// and the seq bumps so the stale orders reply is ignored on arrival.
 	// loading is still true after click 1; reset to allow click 2.
+	// NOTE: click 1 toggled orders collapsed, so customers slid from
+	// idx 4 to idx 2 (y=6).
 	m.loading = false
 	u2, cmd2 := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 6})
 	m = u2.(Model)
-	if cmd2 == nil || m.table != "orders" || m.detailSeq != 2 {
-		t.Fatalf("want orders re-selected seq 2, got %q seq %d", m.table, m.detailSeq)
+	if cmd2 == nil || m.table != "customers" || m.detailSeq != 2 {
+		t.Fatalf("want customers re-selected seq 2, got %q seq %d", m.table, m.detailSeq)
 	}
 }
 
 func TestDetailClickUsesPaneOffset(t *testing.T) {
 	m := browseModel(t)
-	m.list.SetItems([]list.Item{tableItem{name: "users", icon: tableIcon}})
 	m.table = "users"
 	m.focusDetail = true
 	m.cols = []db.Column{{Name: "id"}, {Name: "name"}}
@@ -84,7 +94,6 @@ func TestDetailClickUsesPaneOffset(t *testing.T) {
 
 func TestSeqGuardDropsStaleReply(t *testing.T) {
 	m := browseModel(t)
-	m.list.SetItems([]list.Item{tableItem{name: "users", icon: tableIcon}, tableItem{name: "orders", icon: tableIcon}})
 	m.table = "orders"
 	m.detailSeq = 5
 	stale := detailLoadedMsg{table: "users", seq: 4, cols: []db.Column{{Name: "a"}}}
@@ -104,7 +113,6 @@ func TestSeqGuardDropsStaleReply(t *testing.T) {
 
 func TestBrowseViewFitsTerminal(t *testing.T) {
 	m := browseModel(t)
-	m.list.SetItems([]list.Item{tableItem{name: "users", icon: tableIcon}})
 	m.table = "users"
 	m.cols = []db.Column{{Name: "id"}}
 	m.buildTables()
@@ -118,49 +126,49 @@ func TestBrowseViewFitsTerminal(t *testing.T) {
 }
 
 func TestRegexFiltering(t *testing.T) {
+	// Explorer equivalent: substring filter keeps matching tables with
+	// their parent schema row (fixture: orders+2 cols, customers).
 	m := browseModel(t)
-	items := []list.Item{
-		tableItem{name: "users", icon: tableIcon},
-		tableItem{name: "orders", icon: tableIcon},
-		tableItem{name: "user_roles", icon: tableIcon},
+	m.explorer.SetFilter("cust")
+	rows := m.explorer.VisibleRows()
+	if len(rows) != 2 {
+		t.Fatalf("want 2 rows (schema+customers) matching cust, got %d: %v", len(rows), rows)
 	}
-	m.list.SetItems(items)
-	// Apply regex filter matching tables starting with "user"
-	m.list.SetFilterState(list.Filtering)
-	m.list.SetFilterText("^user")
-	vis := m.list.VisibleItems()
-	if len(vis) != 2 {
-		t.Fatalf("want 2 items matching regex ^user, got %d", len(vis))
+	if rows[1].Kind != RowTable || rows[1].Table != "customers" {
+		t.Fatalf("want customers table row, got %+v", rows[1])
 	}
 }
 
 func TestFilteredMouseChrome(t *testing.T) {
+	// Explorer equivalent: the first tree row lands at explorerFirstRow=4
+	// in every filter state (title+conn+separator chrome above it).
 	m := browseModel(t)
-	m.list.SetItems([]list.Item{tableItem{name: "users", icon: tableIcon}})
-	m.list.SetFilterText("users")
-	m.list.SetFilterState(list.FilterApplied)
+	m.explorer.SetFilter("cust")
 	m.resizeBrowse()
-	// The filter input replaces the title block, so the first item
-	// stays at y = 5 in every filter state.
-	idx, ok := m.listIndexAtRaw(5, screenBrowse)
-	if !ok || idx != 0 {
-		t.Fatalf("want index 0 at y=5 when filtered, got idx=%d ok=%v", idx, ok)
+	r, ok := m.explorer.RowAt(4 - explorerFirstRow)
+	if !ok || r.Kind != RowSchema {
+		t.Fatalf("want schema row at y=4 when filtered, got %+v ok=%v", r, ok)
+	}
+	r, ok = m.explorer.RowAt(5 - explorerFirstRow)
+	if !ok || r.Kind != RowTable || r.Table != "customers" {
+		t.Fatalf("want customers at y=5 when filtered, got %+v ok=%v", r, ok)
 	}
 }
 
-func TestSidebarFilterTypingKeepsSidebar(t *testing.T) {
+// NOTE: TestSidebarFilterTypingKeepsSidebar deleted — it covered the legacy
+// list filter input focus (typing "c" must not trigger disconnect). No
+// explorer filter input exists in this task ("/" just clears the filter,
+// update.go shim retained per scope), so there is no filter-focused state;
+// "c" on the sidebar now disconnects by design (sidebarKeys).
+
+func TestExplorerConnRowClickIsNoop(t *testing.T) {
+	// Clicks on the conn row (y==2) are no-ops: no preview, no disconnect.
 	m := browseModel(t)
-	m.list.SetItems([]list.Item{tableItem{name: "cache", icon: tableIcon}, tableItem{name: "users", icon: tableIcon}})
-	m.list.SetFilterState(list.Filtering)
-	// Typing "c" while the filter is focused must type into the filter,
-	// not trigger the sidebar "c conns" disconnect action.
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m.loading = false
+	u, cmd := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 2})
 	m = u.(Model)
-	if m.screen != screenBrowse {
-		t.Fatalf("typing in filter must not leave browse, got screen %d", m.screen)
-	}
-	if got := m.list.FilterValue(); got != "c" {
-		t.Fatalf("want filter value %q, got %q", "c", got)
+	if cmd != nil || m.table != "" || m.screen != screenBrowse {
+		t.Fatalf("conn click must be noop, got table=%q screen=%d cmd=%v", m.table, m.screen, cmd)
 	}
 }
 
@@ -171,7 +179,6 @@ func TestDetailDimFollowsFocus(t *testing.T) {
 	defer lipgloss.SetColorProfile(termenv.Ascii)
 	newDetail := func(focusDetail bool) Model {
 		m := browseModel(t)
-		m.list.SetItems([]list.Item{tableItem{name: "users", icon: tableIcon}})
 		m.table = "users"
 		m.focusDetail = focusDetail
 		m.cols = []db.Column{{Name: "id"}, {Name: "name"}}
@@ -199,7 +206,6 @@ func TestDetailDimFollowsFocus(t *testing.T) {
 
 func TestBrowseViewSidebarFitsWidth(t *testing.T) {
 	m := browseModel(t)
-	m.list.SetItems([]list.Item{tableItem{name: "cache_locks", icon: tableIcon}, tableItem{name: "migrations", icon: tableIcon}})
 	v := m.View()
 	for i, ln := range strings.Split(v, "\n") {
 		j := strings.Index(ln, "│")

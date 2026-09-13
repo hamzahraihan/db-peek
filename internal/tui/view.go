@@ -32,14 +32,25 @@ func (m Model) fitHeader() string {
 	return titleStyle.Render("db-peek") + " " + dimStyle.Render(status)
 }
 
-// browseView renders the split layout: sidebar table list (left) and
+// explorerFirstRow is the terminal row of the first explorer tree row:
+// one app header row plus the explorer chrome (title + conn + separator).
+const explorerFirstRow = 4
+
+// browseView renders the split layout: sidebar explorer tree (left) and
 // table detail (right). The separator is one column, and detail content
 // is padded to it so rows in both panes share terminal rows.
 func (m Model) browseView() string {
 	var b strings.Builder
 	b.WriteString(m.fitHeader() + "\n")
 
-	side := strings.Split(m.list.View(), "\n")
+	side := strings.Split(m.explorer.Render(m.sidebarW, m.contentH()), "\n")
+	// Insert a dim separator after the conn line so the first tree row
+	// lands at explorerFirstRow: y0=app header, y1=title, y2=conn,
+	// y3=separator, y4=first tree row. Render height semantics unchanged.
+	if len(side) >= 2 {
+		sep := dimStyle.Render(fitText(strings.Repeat("─", m.sidebarW), m.sidebarW))
+		side = append(side[:2], append([]string{sep}, side[2:]...)...)
+	}
 	right := strings.Split(m.detailView(), "\n")
 	h := len(side)
 	if len(right) > h {
