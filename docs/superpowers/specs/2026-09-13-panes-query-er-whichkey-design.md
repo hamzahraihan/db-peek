@@ -38,7 +38,9 @@ replaces the detail grid area with two stacked sub-panes:
 - Bottom: results in the existing `dataTable` (with zebra striping) plus
   a status line `N rows • M ms`.
 
-`ctrl+enter` or `F5` runs the query through the existing `db.Query`
+`ctrl+r` or `F5` runs the query through the existing `db.Query`
+(bubbletea has no `ctrl+enter` key name — most terminals send plain
+`enter` for it — so `ctrl+r` is the chord; `F5` covers one-key runs)
 (200-row cap, 15-second timeout, `detailSeq`-style seq guard against stale
 replies). Errors render in an error line and never clear the editor text.
 `esc`/arrow keys move focus between editor and results sub-panes.
@@ -79,7 +81,7 @@ New/changed keys:
 | Key | Where | Action |
 |-----|-------|--------|
 | `4` / `5` | detail | query / er tab |
-| `ctrl+enter`, `F5` | query editor | run SQL |
+| `ctrl+r`, `F5` | query editor | run SQL |
 | `?` | anywhere | keybinding overlay |
 | click | any pane | focus + select |
 
