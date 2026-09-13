@@ -275,14 +275,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case screenBrowse:
 		// q quits unless the sidebar filter is being typed into or the
 		// query editor has focus (there it inserts the rune).
-		if key == "q" && m.explorer.Filter == "" && !(m.focusDetail && m.tab == 3 && m.queryFocus == 0) {
+		if key == "q" && !m.filtering && m.explorer.Filter == "" && !(m.focusDetail && m.tab == 3 && m.queryFocus == 0) {
 			if m.db != nil {
 				_ = m.db.Close()
 			}
 			return m, tea.Quit
 		}
-		// tab jumps between sidebar and detail.
+		// tab jumps between sidebar and detail. Leaving the sidebar
+		// blurs the filter input (the text stays applied).
 		if key == "tab" || key == "shift+tab" {
+			if !m.focusDetail {
+				m.filtering = false
+				m.filterInput.Blur()
+			}
 			m.focusDetail = !m.focusDetail
 			return m, nil
 		}
@@ -296,7 +301,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // helpToggleAllowed reports whether ? may open the help overlay on the
 // current screen. Typing contexts own the rune instead: the conns filter
-// input, either form input, and the focused query editor.
+// input, either form input, the sidebar filter input, and the focused
+// query editor.
 func (m Model) helpToggleAllowed() bool {
 	switch m.screen {
 	case screenConns:
@@ -304,7 +310,7 @@ func (m Model) helpToggleAllowed() bool {
 	case screenForm:
 		return !m.nameInput.Focused() && !m.connInput.Focused()
 	case screenBrowse:
-		return !(m.focusDetail && m.tab == 3 && m.queryFocus == 0)
+		return !(m.focusDetail && m.tab == 3 && m.queryFocus == 0) && !m.filtering
 	}
 	return true
 }
@@ -318,12 +324,19 @@ func (m *Model) disconnect() {
 	m.screen = screenConns
 	m.focusDetail = false
 	m.err = ""
+	m.filtering = false
+	m.filterInput.Blur()
+	m.filterInput.SetValue("")
+	m.explorer.SetFilter("")
 	m.refreshConns()
 }
 
 // sidebarKeys handles keys on the browse sidebar (explorer is the source
-// of truth; no legacy list filter exists — "/" clears the filter).
+// of truth). While filtering, every keystroke belongs to the filter input.
 func (m Model) sidebarKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+	if m.filtering {
+		return m.filterKeys(msg, key)
+	}
 	switch key {
 	case "up", "k":
 		m.explorer.MoveUp()
@@ -364,9 +377,10 @@ func (m Model) sidebarKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		m = m2
 		return m, tea.Batch(colCmd, inspectCmd)
 	case "/":
-		// Filter input UI deferred to Task 5; clear filter for now.
-		m.explorer.SetFilter("")
-		return m, nil
+		// Open the filter input, keeping any existing text for refinement.
+		m.filtering = true
+		m.filterInput.SetValue(m.explorer.Filter)
+		return m, m.filterInput.Focus()
 	case "r":
 		m.loading = true
 		return m, m.loadSchemas()
@@ -378,6 +392,35 @@ func (m Model) sidebarKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+// filterKeys handles keys while the sidebar filter input is focused.
+// Every keystroke belongs to the filter: single-letter sidebar actions
+// (r/c/...) must not hijack typing. esc exits and clears, enter applies
+// the text and exits, up/down navigate without exiting.
+func (m Model) filterKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		m.filtering = false
+		m.filterInput.Blur()
+		m.filterInput.SetValue("")
+		m.explorer.SetFilter("")
+		return m, nil
+	case "enter":
+		m.filtering = false
+		m.filterInput.Blur()
+		return m, nil
+	case "up":
+		m.explorer.MoveUp()
+		return m, nil
+	case "down":
+		m.explorer.MoveDown()
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.filterInput, cmd = m.filterInput.Update(msg)
+	m.explorer.SetFilter(m.filterInput.Value())
+	return m, cmd
 }
 
 // detailKey handles keys on the schema/indexes/rows/query/er tabs.
@@ -669,7 +712,10 @@ func (m Model) activateConn(name string) (Model, tea.Cmd) {
 
 // inspectTable previews one table in the detail pane; shared by sidebar
 // enter/click. The seq guard drops replies from superseded selections.
+// Previewing blurs the filter input (the text stays applied).
 func (m Model) inspectTable(name string) (Model, tea.Cmd) {
+	m.filtering = false
+	m.filterInput.Blur()
 	m.focusDetail = true
 	m.table = name
 	m.tab = 0

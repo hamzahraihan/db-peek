@@ -193,10 +193,79 @@ func TestFilteredMouseChrome(t *testing.T) {
 }
 
 // NOTE: TestSidebarFilterTypingKeepsSidebar deleted — it covered the legacy
-// list filter input focus (typing "c" must not trigger disconnect). No
-// explorer filter input exists in this task ("/" just clears the filter,
-// update.go shim retained per scope), so there is no filter-focused state;
-// "c" on the sidebar now disconnects by design (sidebarKeys).
+// list filter input focus. Its explorer successor is
+// TestSidebarFilterTyping below: while filtering, keystrokes belong to the
+// filter input and must not trigger sidebar actions.
+
+func TestSidebarFilterTypingFiltersTables(t *testing.T) {
+	m := browseModel(t)
+	// "/" opens the filter input.
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = u.(Model)
+	if !m.filtering {
+		t.Fatal("pressing / must open the sidebar filter input")
+	}
+	// Typing filters live; single-letter keys must not trigger actions
+	// (q would quit, c would disconnect, r would reload).
+	for _, r := range "cust" {
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = u.(Model)
+	}
+	if m.screen != screenBrowse {
+		t.Fatalf("typing in filter must not leave browse, got screen %d", m.screen)
+	}
+	if got := m.explorer.Filter; got != "cust" {
+		t.Fatalf("want filter %q, got %q", "cust", got)
+	}
+	if n := len(m.explorer.VisibleRows()); n != 2 {
+		t.Fatalf("want 2 visible rows when filtered, got %d", n)
+	}
+	// enter applies the filter and exits, keeping the text.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(Model)
+	if m.filtering || m.explorer.Filter != "cust" {
+		t.Fatalf("enter must exit filtering keeping filter, filtering=%v filter=%q", m.filtering, m.explorer.Filter)
+	}
+}
+
+func TestSidebarFilterEscClears(t *testing.T) {
+	m := browseModel(t)
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(Model)
+	if m.filtering || m.explorer.Filter != "" {
+		t.Fatalf("esc must exit and clear filter, filtering=%v filter=%q", m.filtering, m.explorer.Filter)
+	}
+	if m.screen != screenBrowse {
+		t.Fatalf("esc in filter must not disconnect, got screen %d", m.screen)
+	}
+}
+
+func TestSidebarFilterQDoesNotQuit(t *testing.T) {
+	m := browseModel(t)
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = u.(Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	m = u.(Model)
+	if m.screen != screenBrowse {
+		t.Fatalf("typing q in filter must not quit, got screen %d", m.screen)
+	}
+	if m.explorer.Filter != "q" {
+		t.Fatalf("want filter %q, got %q", "q", m.explorer.Filter)
+	}
+	// "?" must type into the filter, not open the help overlay.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = u.(Model)
+	if m.showHelp {
+		t.Fatal("? in filter must not open help")
+	}
+	if m.explorer.Filter != "q?" {
+		t.Fatalf("want filter %q, got %q", "q?", m.explorer.Filter)
+	}
+}
 
 func TestExplorerConnRowClickIsNoop(t *testing.T) {
 	// Clicks on the conn row (y==3, shifted down by the top border) away

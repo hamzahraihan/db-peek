@@ -24,7 +24,7 @@ var keyRegistry = []KeyBinding{
 	{"down/j", "move down", "Sidebar,Detail,Query-results,ER"},
 	{"left/right", "collapse/expand", "Sidebar"},
 	{"enter", "preview table", "Sidebar"},
-	{"/", "clear filter", "Sidebar"},
+	{"/", "filter tables (enter keeps, esc clears)", "Sidebar"},
 	{"r", "refresh", "Sidebar,Detail"},
 	{"c/esc", "back to connections", "Sidebar"},
 	{"q", "quit", "Global"},

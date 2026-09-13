@@ -85,12 +85,18 @@ func (m Model) browseView() string {
 			}
 		}
 	}
-	n := len(m.explorer.Schemas)
-	schemaFooter := "1 schema"
-	if n != 1 {
-		schemaFooter = fmt.Sprintf("%d schemas", n)
+	if m.filtering {
+		// Filter input replaces the schema footer (visual line only, after
+		// tree rows, so explorerFirstRow hit-testing is unchanged).
+		side = append(side, m.filterInput.View())
+	} else {
+		n := len(m.explorer.Schemas)
+		schemaFooter := "1 schema"
+		if n != 1 {
+			schemaFooter = fmt.Sprintf("%d schemas", n)
+		}
+		side = append(side, explorerTitle.Render(fitText(schemaFooter, innerW)))
 	}
-	side = append(side, explorerTitle.Render(fitText(schemaFooter, innerW)))
 	// Cap sidebar inner lines to innerW and pad/truncate to innerH.
 	for i, ln := range side {
 		if lipgloss.Width(ln) > innerW {

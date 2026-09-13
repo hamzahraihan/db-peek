@@ -41,6 +41,8 @@ type Model struct {
 	editing   string // profile being edited, "" when adding
 
 	explorer    Explorer
+	filterInput textinput.Model
+	filtering   bool // sidebar filter input focused; keystrokes belong to it
 	focusDetail bool // browse split: sidebar list vs detail pane
 	sidebarW    int  // sidebar width in cells, set on resize
 	tab         int  // 0 schema, 1 indexes, 2 rows
@@ -100,6 +102,12 @@ func New(connStr string, store *saved.Store) Model {
 	connInput.CharLimit = 512
 	connInput.Width = 80
 
+	filterInput := textinput.New()
+	filterInput.Prompt = "/"
+	filterInput.Placeholder = "filter tables"
+	filterInput.CharLimit = 64
+	filterInput.Width = 32
+
 	customFilter := func(term string, targets []string) []list.Rank {
 		if re, err := regexp.Compile("(?i)" + term); err == nil {
 			var ranks []list.Rank
@@ -129,7 +137,7 @@ func New(connStr string, store *saved.Store) Model {
 	m := Model{
 		connStr: strings.TrimSpace(connStr), store: store,
 		conns: cl, explorer: NewExplorer("", []string{}), count: -1, pageSize: 10, hoverTab: -1,
-		nameInput: nameInput, connInput: connInput,
+		nameInput: nameInput, connInput: connInput, filterInput: filterInput,
 		connsItemH: cdelegate.Height() + cdelegate.Spacing(),
 		editor:     NewEditor(),
 	}
