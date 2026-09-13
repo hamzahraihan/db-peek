@@ -95,3 +95,61 @@ func (m Model) reloadTables() tea.Cmd {
 		return tablesLoadedMsg{names: names, err: err}
 	}
 }
+
+func (m Model) loadSchemas() tea.Cmd {
+	db := m.db
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		schemas, err := db.ListSchemas(ctx)
+		if err != nil {
+			return schemasLoadedMsg{err: err}
+		}
+		tables := map[string][]dbpkg.TableRef{}
+		for _, s := range schemas {
+			refs, err := db.ListTablesInSchema(ctx, s)
+			if err != nil {
+				return schemasLoadedMsg{err: err}
+			}
+			tables[s] = refs
+		}
+		return schemasLoadedMsg{schemas: schemas, tables: tables}
+	}
+}
+
+func (m Model) loadCounts() tea.Cmd {
+	db := m.db
+	_ = db // stub shim: chaining goes via loadOneCount; keep verbatim req collection
+	type req struct{ schema, table string }
+	var reqs []req
+	for _, s := range m.explorer.Schemas {
+		for _, tb := range s.Tables {
+			if !tb.CountOK {
+				reqs = append(reqs, req{s.Name, tb.Name})
+			}
+		}
+	}
+	return func() tea.Msg {
+		return nil
+	}
+}
+
+func (m Model) loadOneCount(schema, table string) tea.Cmd {
+	db := m.db
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		n, err := db.ApproxCount(ctx, schema, table)
+		return tableCountMsg{schema: schema, table: table, count: n, err: err}
+	}
+}
+
+func (m Model) loadColumns(schema, table string) tea.Cmd {
+	db := m.db
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		cols, err := db.Columns(ctx, table)
+		return columnsLoadedMsg{schema: schema, table: table, columns: cols, err: err}
+	}
+}

@@ -29,4 +29,21 @@ type (
 		names []string
 		err   error
 	}
+	schemasLoadedMsg struct {
+		schemas []string
+		tables  map[string][]dbpkg.TableRef
+		err     error
+	}
+	tableCountMsg struct {
+		schema string
+		table  string
+		count  int64
+		err    error
+	}
+	columnsLoadedMsg struct {
+		schema  string
+		table   string
+		columns []dbpkg.Column
+		err     error
+	}
 )

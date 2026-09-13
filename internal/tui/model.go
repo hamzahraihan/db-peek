@@ -40,7 +40,8 @@ type Model struct {
 	formFocus int    // 0 name, 1 conn
 	editing   string // profile being edited, "" when adding
 
-	list        list.Model
+	list        list.Model // DEPRECATED shim retained for Task 5 view/mouse; explorer is the source of truth
+	explorer    Explorer
 	focusDetail bool // browse split: sidebar list vs detail pane
 	sidebarW    int  // sidebar width in cells, set on resize
 	tab         int  // 0 schema, 1 indexes, 2 rows
@@ -129,7 +130,7 @@ func New(connStr string, store *saved.Store) Model {
 
 	m := Model{
 		connStr: strings.TrimSpace(connStr), store: store,
-		conns: cl, list: l, count: -1, pageSize: 10, hoverTab: -1,
+		conns: cl, list: l, explorer: NewExplorer("", []string{}), count: -1, pageSize: 10, hoverTab: -1,
 		nameInput: nameInput, connInput: connInput,
 		connsItemH:  cdelegate.Height() + cdelegate.Spacing(),
 		tablesItemH: delegate.Height() + delegate.Spacing(),

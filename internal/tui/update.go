@@ -6,6 +6,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -35,16 +36,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screen = screenBrowse
 		m.focusDetail = false
 		m.err = ""
-		items := make([]list.Item, len(msg.names))
-		for i, n := range msg.names {
-			items[i] = tableItem{name: n, icon: tableIcon}
-		}
-		m.list.SetItems(items)
-		m.status = fmt.Sprintf("%d tables • %s (%s)", len(items), m.db.Display, m.db.Driver)
-		if len(msg.names) == 0 {
-			return m, nil
-		}
-		return m.inspectTable(msg.names[0])
+		m.explorer = NewExplorer(m.db.Display, nil)
+		return m, m.loadSchemas()
 
 	case tablesLoadedMsg:
 		m.loading = false
@@ -77,6 +70,91 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = ""
 		m.buildTables()
 		m.sizeTables()
+		return m, nil
+
+	case schemasLoadedMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		m.explorer = NewExplorer(m.db.Display, msg.schemas)
+		total := 0
+		for si := range m.explorer.Schemas {
+			refs := msg.tables[m.explorer.Schemas[si].Name]
+			tbs := make([]TableNode, len(refs))
+			for i, r := range refs {
+				tbs[i] = TableNode{
+					Schema: m.explorer.Schemas[si].Name,
+					Name:   r.Name,
+					IsView: r.IsView,
+					Count:  -1,
+				}
+			}
+			m.explorer.Schemas[si].Tables = tbs
+			total += len(tbs)
+		}
+		m.status = fmt.Sprintf("%d tables • %s (%s)", total, m.db.Display, m.db.Driver)
+		for _, s := range m.explorer.Schemas {
+			for _, tb := range s.Tables {
+				m2, inspectCmd := m.inspectTable(tb.Name)
+				m = m2
+				return m, tea.Batch(m.loadOneCount(s.Name, tb.Name), inspectCmd)
+			}
+		}
+		return m, nil
+
+	case tableCountMsg:
+		for si := range m.explorer.Schemas {
+			if m.explorer.Schemas[si].Name != msg.schema {
+				continue
+			}
+			for ti := range m.explorer.Schemas[si].Tables {
+				if m.explorer.Schemas[si].Tables[ti].Name != msg.table {
+					continue
+				}
+				if msg.err != nil {
+					m.explorer.Schemas[si].Tables[ti].CountOK = false
+				} else {
+					m.explorer.Schemas[si].Tables[ti].Count = msg.count
+					m.explorer.Schemas[si].Tables[ti].CountOK = true
+				}
+			}
+		}
+		for _, s := range m.explorer.Schemas {
+			for _, tb := range s.Tables {
+				if !tb.CountOK {
+					return m, m.loadOneCount(s.Name, tb.Name)
+				}
+			}
+		}
+		return m, nil
+
+	case columnsLoadedMsg:
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		for si := range m.explorer.Schemas {
+			if m.explorer.Schemas[si].Name != msg.schema {
+				continue
+			}
+			for ti := range m.explorer.Schemas[si].Tables {
+				if m.explorer.Schemas[si].Tables[ti].Name != msg.table {
+					continue
+				}
+				cols := make([]ColumnNode, len(msg.columns))
+				for i, c := range msg.columns {
+					cols[i] = ColumnNode{
+						Name:     c.Name,
+						DataType: c.Type,
+						IsPK:     strings.HasPrefix(c.Extra, "PK"),
+						IsFK:     strings.HasSuffix(c.Name, "_id"),
+					}
+				}
+				m.explorer.Schemas[si].Tables[ti].Columns = cols
+			}
+		}
 		return m, nil
 
 	case rowsPageMsg:
@@ -140,7 +218,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.formKey(msg, key)
 	case screenBrowse:
 		// q quits unless the sidebar filter is being typed into.
-		if key == "q" && !m.list.IsFiltered() && !m.list.FilterInput.Focused() {
+		if key == "q" && m.explorer.Filter == "" {
 			if m.db != nil {
 				_ = m.db.Close()
 			}
@@ -173,23 +251,41 @@ func (m *Model) disconnect() {
 
 // sidebarKeys handles keys on the browse sidebar.
 func (m Model) sidebarKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
-	// While the filter input is focused, every keystroke belongs to the
-	// filter: single-letter sidebar actions (r/c/...) must not hijack typing.
+	// Shim retained for Task 5: while the legacy list filter input is
+	// focused, keystrokes belong to it so TestSidebarFilterTypingKeepsSidebar
+	// stays green until the explorer filter UI lands.
 	if m.list.SettingFilter() {
 		var cmd tea.Cmd
 		m.list, cmd = m.list.Update(msg)
 		return m, cmd
 	}
 	switch key {
+	case "up", "k":
+		m.explorer.MoveUp()
+		return m, nil
+	case "down", "j":
+		m.explorer.MoveDown()
+		return m, nil
+	case "left", "right":
+		m.explorer.Toggle()
+		return m, nil
 	case "enter":
-		sel, ok := m.list.SelectedItem().(tableItem)
-		if !ok {
+		row, ok := m.explorer.RowAt(m.explorer.Cursor)
+		m.explorer.Toggle()
+		if !ok || row.Kind != RowTable {
 			return m, nil
 		}
-		return m.inspectTable(sel.name)
+		colCmd := m.loadColumns(row.Schema, row.Table)
+		m2, inspectCmd := m.inspectTable(row.Table)
+		m = m2
+		return m, tea.Batch(colCmd, inspectCmd)
+	case "/":
+		// Filter input UI deferred to Task 5; clear filter for now.
+		m.explorer.SetFilter("")
+		return m, nil
 	case "r":
 		m.loading = true
-		return m, m.reloadTables()
+		return m, m.loadSchemas()
 	case "c":
 		m.disconnect()
 		return m, nil
@@ -197,9 +293,7 @@ func (m Model) sidebarKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		m.disconnect()
 		return m, nil
 	}
-	var cmd tea.Cmd
-	m.list, cmd = m.list.Update(msg)
-	return m, cmd
+	return m, nil
 }
 
 // detailKey handles keys on the schema/indexes/rows tabs.

@@ -22,10 +22,25 @@ func browseModel(t *testing.T) Model {
 	m.loading = false
 	m.width, m.height = 100, 30
 	m.db = &db.DB{Driver: db.SQLite, Display: "test"}
+	m.explorer = fixtureExplorer()
 	m.list.SetItems([]list.Item{tableItem{name: "users", icon: tableIcon}, tableItem{name: "orders", icon: tableIcon}})
 	m.resizeBrowse()
 	m.list.SetSize(30, 20)
 	return m
+}
+
+func TestTableCountMsgApplies(t *testing.T) {
+	m := browseModel(t)
+	m.explorer = fixtureExplorer()
+	u, _ := m.Update(tableCountMsg{schema: "public", table: "customers", count: 777})
+	m = u.(Model)
+	for _, s := range m.explorer.Schemas {
+		for _, tb := range s.Tables {
+			if tb.Name == "customers" && (!tb.CountOK || tb.Count != 777) {
+				t.Fatalf("count not applied: %+v", tb)
+			}
+		}
+	}
 }
 
 func TestSidebarClickPreviewsInDetail(t *testing.T) {
