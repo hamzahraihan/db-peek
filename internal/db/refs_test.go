@@ -51,3 +51,11 @@ func TestForeignKeysSQLite(t *testing.T) {
 		t.Fatalf("missing incoming fk for customers in %v", in)
 	}
 }
+
+func TestForeignKeysSQLiteError(t *testing.T) {
+	d := openFKMem(t)
+	d.SQL.Close()
+	if _, err := d.ForeignKeys(context.Background(), "orders"); err == nil {
+		t.Fatal("expected error on closed DB, got nil")
+	}
+}
