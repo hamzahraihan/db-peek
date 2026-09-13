@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -130,8 +129,7 @@ func (m Model) wheel(n int) (tea.Model, tea.Cmd) {
 
 // clickList maps a click row to a conns picker item. Connections need a
 // double-click to connect (accidental-connect guard). Browse sidebar
-// clicks are handled by clickExplorer; the screenBrowse path here is
-// retired (Task 6 removes it fully).
+// clicks are handled by clickExplorer.
 func (m Model) clickList(y int, which screen) (tea.Model, tea.Cmd) {
 	idx, ok := m.listIndexAt(y, which)
 	if !ok {
@@ -183,7 +181,8 @@ func (m Model) clickExplorer(x, y int) (tea.Model, tea.Cmd) {
 	}
 }
 
-// listIndexAt resolves a terminal row to a global item index in a picker.
+// listIndexAt resolves a terminal row to a global item index in the conns
+// picker (the only remaining bubbles list; sidebar uses the explorer tree).
 func (m Model) listIndexAt(y int, which screen) (idx int, ok bool) {
 	idx, ok = m.listIndexAtRaw(y, which)
 	logMouse("  listIndexAt y=%d which=%d -> idx=%d ok=%v", y, which, idx, ok)
@@ -191,13 +190,10 @@ func (m Model) listIndexAt(y int, which screen) (idx int, ok bool) {
 }
 
 func (m Model) listIndexAtRaw(y int, which screen) (int, bool) {
-	var l *list.Model
-	var itemH int
-	if which == screenConns {
-		l, itemH = &m.conns, m.connsItemH
-	} else {
-		l, itemH = &m.list, m.tablesItemH
+	if which != screenConns {
+		return 0, false
 	}
+	l, itemH := &m.conns, m.connsItemH
 	if itemH <= 0 {
 		logMouse("  listIndexAtRaw: itemH <= 0 (%d)", itemH)
 		return 0, false

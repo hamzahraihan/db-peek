@@ -85,17 +85,6 @@ func (m Model) loadRowsPage() tea.Cmd {
 	}
 }
 
-// reloadTables refetches the table list for the current database.
-func (m Model) reloadTables() tea.Cmd {
-	db := m.db
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		names, err := db.ListTables(ctx)
-		return tablesLoadedMsg{names: names, err: err}
-	}
-}
-
 func (m Model) loadSchemas() tea.Cmd {
 	db := m.db
 	return func() tea.Msg {
@@ -114,23 +103,6 @@ func (m Model) loadSchemas() tea.Cmd {
 			tables[s] = refs
 		}
 		return schemasLoadedMsg{schemas: schemas, tables: tables}
-	}
-}
-
-func (m Model) loadCounts() tea.Cmd {
-	db := m.db
-	_ = db // stub shim: chaining goes via loadOneCount; keep verbatim req collection
-	type req struct{ schema, table string }
-	var reqs []req
-	for _, s := range m.explorer.Schemas {
-		for _, tb := range s.Tables {
-			if !tb.CountOK {
-				reqs = append(reqs, req{s.Name, tb.Name})
-			}
-		}
-	}
-	return func() tea.Msg {
-		return nil
 	}
 }
 

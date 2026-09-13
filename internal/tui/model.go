@@ -40,7 +40,6 @@ type Model struct {
 	formFocus int    // 0 name, 1 conn
 	editing   string // profile being edited, "" when adding
 
-	list        list.Model // DEPRECATED shim retained for Task 5 view/mouse; explorer is the source of truth
 	explorer    Explorer
 	focusDetail bool // browse split: sidebar list vs detail pane
 	sidebarW    int  // sidebar width in cells, set on resize
@@ -65,7 +64,6 @@ type Model struct {
 	// Mouse: rows per item in each picker (from the item delegates), plus
 	// last click for double-click detection and hover deduplication.
 	connsItemH     int
-	tablesItemH    int
 	lastClickAt    time.Time
 	lastClickIdx   int
 	lastClickWhere screen
@@ -114,26 +112,11 @@ func New(connStr string, store *saved.Store) Model {
 	cl.SetShowHelp(false)
 	cl.Filter = customFilter
 
-	delegate := list.NewDefaultDelegate()
-	delegate.ShowDescription = false
-	delegate.SetSpacing(0)
-	tstyles := list.NewDefaultItemStyles()
-	tstyles.SelectedTitle = selTitle
-	tstyles.SelectedDesc = selDesc
-	delegate.Styles = tstyles
-	l := list.New(nil, delegate, 0, 0)
-	l.Title = "Tables"
-	l.SetShowStatusBar(true)
-	l.SetFilteringEnabled(true)
-	l.SetShowHelp(false)
-	l.Filter = customFilter
-
 	m := Model{
 		connStr: strings.TrimSpace(connStr), store: store,
-		conns: cl, list: l, explorer: NewExplorer("", []string{}), count: -1, pageSize: 10, hoverTab: -1,
+		conns: cl, explorer: NewExplorer("", []string{}), count: -1, pageSize: 10, hoverTab: -1,
 		nameInput: nameInput, connInput: connInput,
-		connsItemH:  cdelegate.Height() + cdelegate.Spacing(),
-		tablesItemH: delegate.Height() + delegate.Spacing(),
+		connsItemH: cdelegate.Height() + cdelegate.Spacing(),
 	}
 	m.refreshConns()
 	if m.connStr == "" {

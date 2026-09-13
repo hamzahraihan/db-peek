@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -38,19 +37,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = ""
 		m.explorer = NewExplorer(m.db.Display, nil)
 		return m, m.loadSchemas()
-
-	case tablesLoadedMsg:
-		m.loading = false
-		if msg.err != nil {
-			m.err = msg.err.Error()
-			return m, nil
-		}
-		items := make([]list.Item, len(msg.names))
-		for i, n := range msg.names {
-			items[i] = tableItem{name: n, icon: tableIcon}
-		}
-		m.list.SetItems(items)
-		return m, nil
 
 	case detailLoadedMsg:
 		if msg.seq != m.detailSeq {
@@ -114,16 +100,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					continue
 				}
 				if msg.err != nil {
-					m.explorer.Schemas[si].Tables[ti].CountOK = false
+					m.explorer.Schemas[si].Tables[ti].CountErr = true
 				} else {
 					m.explorer.Schemas[si].Tables[ti].Count = msg.count
 					m.explorer.Schemas[si].Tables[ti].CountOK = true
+					m.explorer.Schemas[si].Tables[ti].CountErr = false
 				}
 			}
 		}
 		for _, s := range m.explorer.Schemas {
 			for _, tb := range s.Tables {
-				if !tb.CountOK {
+				if !tb.CountOK && !tb.CountErr {
 					return m, m.loadOneCount(s.Name, tb.Name)
 				}
 			}
@@ -193,12 +180,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.connInput, cmd = m.connInput.Update(msg)
 		}
 		return m, cmd
-	case screenBrowse:
-		if !m.focusDetail {
-			var cmd tea.Cmd
-			m.list, cmd = m.list.Update(msg)
-			return m, cmd
-		}
 	}
 	return m, nil
 }
@@ -249,16 +230,9 @@ func (m *Model) disconnect() {
 	m.refreshConns()
 }
 
-// sidebarKeys handles keys on the browse sidebar.
+// sidebarKeys handles keys on the browse sidebar (explorer is the source
+// of truth; no legacy list filter exists — "/" clears the filter).
 func (m Model) sidebarKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
-	// Shim retained for Task 5: while the legacy list filter input is
-	// focused, keystrokes belong to it so TestSidebarFilterTypingKeepsSidebar
-	// stays green until the explorer filter UI lands.
-	if m.list.SettingFilter() {
-		var cmd tea.Cmd
-		m.list, cmd = m.list.Update(msg)
-		return m, cmd
-	}
 	switch key {
 	case "up", "k":
 		m.explorer.MoveUp()

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -12,6 +13,8 @@ import (
 	"db-peek/internal/db"
 	"db-peek/internal/saved"
 )
+
+var errTestCount = errors.New("count failed")
 
 func browseModel(t *testing.T) Model {
 	t.Helper()
@@ -37,6 +40,39 @@ func TestTableCountMsgApplies(t *testing.T) {
 				t.Fatalf("count not applied: %+v", tb)
 			}
 		}
+	}
+}
+
+func TestTableCountErrLatchesNoRetry(t *testing.T) {
+	m := browseModel(t)
+	m.explorer = fixtureExplorer()
+	// Make customers the only pending count; orders stays OK.
+	for si := range m.explorer.Schemas {
+		for ti := range m.explorer.Schemas[si].Tables {
+			if m.explorer.Schemas[si].Tables[ti].Name == "customers" {
+				m.explorer.Schemas[si].Tables[ti].Count = -1
+				m.explorer.Schemas[si].Tables[ti].CountOK = false
+				m.explorer.Schemas[si].Tables[ti].CountErr = false
+			}
+		}
+	}
+	u, cmd := m.Update(tableCountMsg{schema: "public", table: "customers", err: errTestCount})
+	m = u.(Model)
+	tb, ok := m.explorer.tableByName("public", "customers")
+	if !ok || !tb.CountErr {
+		t.Fatalf("err must latch CountErr: %+v ok=%v", tb, ok)
+	}
+	if out := m.explorer.Render(34, 20); !strings.Contains(out, "?") {
+		t.Fatalf("errored count must render ?: \n%s", out)
+	}
+	if cmd != nil {
+		t.Fatal("errored count must not re-queue a load (want nil cmd)")
+	}
+	// A second identical err must also dispatch no further cmd.
+	u2, cmd2 := m.Update(tableCountMsg{schema: "public", table: "customers", err: errTestCount})
+	_ = u2
+	if cmd2 != nil {
+		t.Fatal("second err must not retry either (want nil cmd)")
 	}
 }
 

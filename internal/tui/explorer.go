@@ -29,6 +29,7 @@ type TableNode struct {
 	Expanded bool
 	Count    int64
 	CountOK  bool
+	CountErr bool // latched on count failure: Render shows "?", loader skips retry
 	Columns  []ColumnNode
 }
 
@@ -243,12 +244,14 @@ func (e *Explorer) Render(sidebarW, height int) string {
 			if tb.IsView {
 				icon = "👁"
 			}
-			left = "  " + disc + " " + icon + " " + r.Table
-			if tb.CountOK {
-				right = explorerCount.Render(humanizeCount(tb.Count))
-			} else {
-				right = explorerCount.Render("…")
-			}
+		left = "  " + disc + " " + icon + " " + r.Table
+		if tb.CountErr {
+			right = explorerCount.Render("?")
+		} else if tb.CountOK {
+			right = explorerCount.Render(humanizeCount(tb.Count))
+		} else {
+			right = explorerCount.Render("…")
+		}
 		case RowColumn:
 			c, _ := e.columnByName(r.Schema, r.Table, r.Column)
 			icon := "◇"
