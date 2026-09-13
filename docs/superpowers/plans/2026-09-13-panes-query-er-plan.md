@@ -948,8 +948,11 @@ var keyRegistry = []KeyBinding{
 	{"r", "refresh", "Sidebar,Detail"},
 	{"c/esc", "back to connections", "Sidebar"},
 	{"q", "quit", "Global"},
-	{"tab", "switch pane", "Global"},
-	{"1..5", "schema/indexes/rows/query/er tab", "Detail"},
+	{"tab/shift+tab", "switch pane", "Global"},
+	{"h/l", "prev/next tab", "Detail"},
+	{"esc/backspace", "back to sidebar", "Detail"},
+	{"home/end", "top/bottom of grid", "Detail"},
+	{"1/2/3/4/5", "schema/indexes/rows/query/er tab", "Detail"},
 	{"n/p", "next/prev rows page", "Detail"},
 	{"s", "cycle page size", "Detail"},
 	{"pgup/pgdn", "page grid", "Detail"},
@@ -974,16 +977,16 @@ func TestHelpRegistryCoversHandlers(t *testing.T) {
 	handled := []string{"up", "k", "down", "j", "left", "right", "enter", "/", "r", "c", "esc", "q", "tab", "1", "2", "3", "4", "5", "n", "p", "s", "pgup", "pgdown", "ctrl+u", "ctrl+d", "ctrl+r", "g", "G", "home", "end", "f5", "?", "a", "e", "d", "backspace", "h", "l", "shift+tab"}
 	have := map[string]bool{}
 	for _, b := range keyRegistry {
+		if strings.Contains(b.Key, "..") {
+			continue
+		}
 		for _, k := range strings.Split(b.Key, "/") {
-			if strings.Contains(b.Key, "..") {
-				continue
-			}
-			have[strings.TrimSpace(k)] = true
+			have[strings.ToLower(strings.TrimSpace(k))] = true
 		}
 	}
 	var missing []string
 	for _, k := range handled {
-		if !have[k] {
+		if !have[strings.ToLower(k)] {
 			missing = append(missing, k)
 		}
 	}
