@@ -1,0 +1,163 @@
+package tui
+
+import (
+	"strings"
+
+	"github.com/alecthomas/chroma/v2"
+	"github.com/alecthomas/chroma/v2/lexers"
+	"github.com/charmbracelet/lipgloss"
+)
+
+type Editor struct {
+	Lines   []string
+	CurLine int
+	CurCol  int // rune offset within line
+	OffY    int // first visible line
+}
+
+func NewEditor() Editor { return Editor{Lines: []string{""}} }
+
+func (e *Editor) runes() []rune { return []rune(e.Lines[e.CurLine]) }
+
+func (e *Editor) Insert(r rune) {
+	rs := e.runes()
+	if e.CurCol > len(rs) {
+		e.CurCol = len(rs)
+	}
+	e.Lines[e.CurLine] = string(rs[:e.CurCol]) + string(r) + string(rs[e.CurCol:])
+	e.CurCol++
+}
+
+func (e *Editor) Backspace() {
+	rs := e.runes()
+	if e.CurCol > 0 {
+		e.Lines[e.CurLine] = string(rs[:e.CurCol-1]) + string(rs[e.CurCol:])
+		e.CurCol--
+		return
+	}
+	if e.CurLine > 0 {
+		prev := len([]rune(e.Lines[e.CurLine-1]))
+		e.Lines[e.CurLine-1] += e.Lines[e.CurLine]
+		e.Lines = append(e.Lines[:e.CurLine], e.Lines[e.CurLine+1:]...)
+		e.CurLine--
+		e.CurCol = prev
+	}
+}
+
+func (e *Editor) Delete() {
+	rs := e.runes()
+	if e.CurCol < len(rs) {
+		e.Lines[e.CurLine] = string(rs[:e.CurCol]) + string(rs[e.CurCol+1:])
+		return
+	}
+	if e.CurLine < len(e.Lines)-1 {
+		e.Lines[e.CurLine] += e.Lines[e.CurLine+1]
+		e.Lines = append(e.Lines[:e.CurLine+1], e.Lines[e.CurLine+2:]...)
+	}
+}
+
+func (e *Editor) Newline() {
+	rs := e.runes()
+	if e.CurCol > len(rs) {
+		e.CurCol = len(rs)
+	}
+	e.Lines = append(e.Lines[:e.CurLine+1], append([]string{string(rs[e.CurCol:])}, e.Lines[e.CurLine+1:]...)...)
+	e.Lines[e.CurLine] = string(rs[:e.CurCol])
+	e.CurLine++
+	e.CurCol = 0
+}
+
+func (e *Editor) MoveUp() {
+	if e.CurLine > 0 {
+		e.CurLine--
+		e.CurCol = min(e.CurCol, len([]rune(e.Lines[e.CurLine])))
+	}
+}
+
+func (e *Editor) MoveDown() {
+	if e.CurLine < len(e.Lines)-1 {
+		e.CurLine++
+		e.CurCol = min(e.CurCol, len([]rune(e.Lines[e.CurLine])))
+	}
+}
+
+func (e *Editor) MoveLeft() {
+	if e.CurCol > 0 {
+		e.CurCol--
+	} else if e.CurLine > 0 {
+		e.CurLine--
+		e.CurCol = len([]rune(e.Lines[e.CurLine]))
+	}
+}
+
+func (e *Editor) MoveRight() {
+	if e.CurCol < len([]rune(e.Lines[e.CurLine])) {
+		e.CurCol++
+	} else if e.CurLine < len(e.Lines)-1 {
+		e.CurLine++
+		e.CurCol = 0
+	}
+}
+
+func (e *Editor) Home() { e.CurCol = 0 }
+func (e *Editor) End()  { e.CurCol = len([]rune(e.Lines[e.CurLine])) }
+
+func (e *Editor) Text() string { return strings.Join(e.Lines, "\n") }
+
+func (e *Editor) SetText(s string) {
+	e.Lines = strings.Split(s, "\n")
+	e.CurLine, e.CurCol, e.OffY = 0, 0, 0
+}
+
+func (e *Editor) CursorXY() (int, int) { return e.CurLine, e.CurCol }
+
+type hlCell struct {
+	Text  string
+	Style lipgloss.Style
+}
+
+var (
+	sqlKeyword = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#EAB308"))
+	sqlString  = lipgloss.NewStyle().Foreground(lipgloss.Color("#4ADE80"))
+	sqlNumber  = lipgloss.NewStyle().Foreground(lipgloss.Color("#67E8F9"))
+	sqlComment = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	sqlPlain   = lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
+)
+
+func HighlightSQL(src string) [][]hlCell {
+	lx := lexers.Get("sql")
+	if lx == nil {
+		return [][]hlCell{{{Text: src, Style: sqlPlain}}}
+	}
+	it, err := lx.Tokenise(nil, src)
+	if err != nil {
+		return [][]hlCell{{{Text: src, Style: sqlPlain}}}
+	}
+	var out [][]hlCell
+	cur := []hlCell{}
+	flush := func() { out = append(out, cur); cur = []hlCell{} }
+	for _, tok := range it.Tokens() {
+		st := sqlPlain
+		switch {
+		case tok.Type.InCategory(chroma.Keyword):
+			st = sqlKeyword
+		case tok.Type.InCategory(chroma.LiteralString):
+			st = sqlString
+		case tok.Type.InCategory(chroma.LiteralNumber):
+			st = sqlNumber
+		case tok.Type.InCategory(chroma.Comment):
+			st = sqlComment
+		}
+		parts := strings.Split(tok.Value, "\n")
+		for i, p := range parts {
+			if i > 0 {
+				flush()
+			}
+			if p != "" {
+				cur = append(cur, hlCell{Text: p, Style: st})
+			}
+		}
+	}
+	out = append(out, cur)
+	return out
+}
