@@ -182,10 +182,16 @@ func (t *dataTable) view(dim bool) string {
 		}
 		line := strings.Join(cells, "")
 		switch {
-		case i == t.cursor:
+		case i == t.cursor && t.cursor >= 0:
 			line = selectedStyle.Render(line)
 		case i == t.hover:
 			line = hoverStyle.Render(line)
+		case i%2 == 0:
+			if dim {
+				line = zebraDimStyle.Render(line)
+			} else {
+				line = zebraStyle.Render(line)
+			}
 		}
 		b.WriteString(line + "\n")
 	}

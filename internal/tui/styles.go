@@ -23,6 +23,8 @@ var (
 	dataHeaderBorder  = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	dataSelectedStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230")).Background(lipgloss.Color("62"))
 	dataHoverStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("236"))
+	zebraStyle        = lipgloss.NewStyle().Background(lipgloss.Color("235"))
+	zebraDimStyle     = lipgloss.NewStyle().Background(lipgloss.Color("234"))
 )
 
 // Dim variants for the detail pane when focus sits on the sidebar.
