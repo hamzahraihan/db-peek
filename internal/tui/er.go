@@ -8,6 +8,8 @@ package tui
 
 import (
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // erSpan is one clickable neighbor name within the rendered diagram:
@@ -84,16 +86,30 @@ func (m Model) erLayout(innerW int) ([]string, []erSpan) {
 		inLabels[fk.FromTable] = append(inLabels[fk.FromTable], fk.FromColumn+"→"+fk.ToColumn)
 	}
 
+	// Neighbor spans are tracked structurally while building the
+	// connector rows (start cell + name cell width per row) instead of
+	// re-parsing rendered text, so quoted/spaced/wide identifiers hit
+	// correctly. Outgoing rows ("<left> ──▶ <center>") span the left
+	// table at cell 0; incoming rows ("<center> ◀── <right>") span the
+	// right table after the "<center> ◀── " prefix.
+	type erMeta struct {
+		name      string
+		x0, nameW int
+	}
+	var metas []erMeta
 	for _, to := range outTables {
 		lines = append(lines, to+" ──▶ "+m.table+" "+strings.Join(outLabels[to], ", "))
+		metas = append(metas, erMeta{name: to, x0: 0, nameW: lipgloss.Width(to)})
 	}
 	for _, from := range inTables {
-		lines = append(lines, m.table+" ◀── "+from+" "+strings.Join(inLabels[from], ", "))
+		prefix := m.table + " ◀── "
+		lines = append(lines, prefix+from+" "+strings.Join(inLabels[from], ", "))
+		metas = append(metas, erMeta{name: from, x0: lipgloss.Width(prefix), nameW: lipgloss.Width(from)})
 	}
 
-	// Clip to innerW and record neighbor spans on the connector rows.
-	// Outgoing rows ("<left> ──▶ <center>") span the left table;
-	// incoming rows ("<center> ◀── <right>") span the right table.
+	// Clip to innerW, intersecting each structural span with the visible
+	// prefix (fitText keeps the first innerW-3 cells + "..." on overflow,
+	// so a name truncated away yields no span).
 	var spans []erSpan
 	out := make([]string, len(lines))
 	for i, ln := range lines {
@@ -102,31 +118,24 @@ func (m Model) erLayout(innerW int) ([]string, []erSpan) {
 		if i < centerCount {
 			continue
 		}
-		switch {
-		case strings.Contains(ln, "──▶"):
-			name := strings.TrimSpace(strings.SplitN(ln, "──▶", 2)[0])
-			if x := strings.Index(clipped, name); x >= 0 && name != "" {
-				spans = append(spans, erSpan{y: i, x0: x, x1: x + len(name), name: name})
+		meta := metas[i-centerCount]
+		if meta.name == "" || meta.nameW <= 0 {
+			continue
+		}
+		x0, x1 := meta.x0, meta.x0+meta.nameW
+		if innerW > 0 && lipgloss.Width(ln) > innerW {
+			bound := innerW - 3
+			if innerW <= 3 {
+				continue // clipped to "...": no name cells visible
 			}
-		case strings.Contains(ln, "◀──"):
-			rest := strings.SplitN(ln, "◀──", 2)[1]
-			fields := strings.Fields(rest)
-			if len(fields) == 0 {
+			if x0 >= bound {
 				continue
 			}
-			name := fields[0]
-			// The center name sorts first on the line; the neighbor
-			// sits after the arrow, so search from there.
-			x := -1
-			if ax := strings.Index(clipped, "◀──"); ax >= 0 {
-				if nx := strings.Index(clipped[ax:], name); nx >= 0 {
-					x = ax + nx
-				}
-			}
-			if x >= 0 {
-				spans = append(spans, erSpan{y: i, x0: x, x1: x + len(name), name: name})
+			if x1 > bound {
+				x1 = bound
 			}
 		}
+		spans = append(spans, erSpan{y: i, x0: x0, x1: x1, name: meta.name})
 	}
 	return out, spans
 }

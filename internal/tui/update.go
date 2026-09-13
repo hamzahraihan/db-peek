@@ -658,7 +658,6 @@ func (m *Model) activeGrid() *dataTable {
 }
 
 // activateConn connects to a saved profile; shared by enter-key and double-click.
-// activateConn connects to a saved profile; shared by enter-key and double-click.
 func (m Model) activateConn(name string) (Model, tea.Cmd) {
 	m.delArm = ""
 	m.screen = screenBrowse
