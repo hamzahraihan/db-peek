@@ -6,7 +6,7 @@ func (m Model) connsView() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("db-peek - connections") + "\n")
 	body := m.conns.View()
-	foot := dimStyle.Render(fitText("up/down/wheel navigate • hover/click select • 2xclick connect • a add • e edit • d forget • q quit", m.width))
+	foot := dimStyle.Render(fitText("up/down navigate • click select • 2xclick connect • a add • e edit • d forget • q quit • ? keys", m.width))
 	if m.loading {
 		foot += "  " + "connecting..."
 	}

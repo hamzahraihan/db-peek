@@ -28,6 +28,17 @@ const detailTableTop = 6
 // 0-indexed terminal cells.
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	logMouse("event=%q x=%d y=%d screen=%d loading=%v", msg.String(), msg.X, msg.Y, m.screen, m.loading)
+	// Which-key overlay is modal: a left-press outside the overlay rect
+	// closes it, inside is a noop, and all other mouse input is swallowed.
+	if m.showHelp {
+		if msg.Type == tea.MouseLeft && msg.Action == tea.MouseActionPress {
+			x, y, w, h := m.helpRect()
+			if msg.X < x || msg.X >= x+w || msg.Y < y || msg.Y >= y+h {
+				m.showHelp = false
+			}
+		}
+		return m, nil
+	}
 	switch msg.Type {
 	case tea.MouseWheelUp:
 		return m.wheel(-3)
@@ -367,7 +378,7 @@ func (m Model) hoverTable(y int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.tab == 4 {
-		return m, nil // ER placeholder: nothing to hover until Task 6
+		return m, nil // ER tab: diagram scrolls via up/down keys, no row hover
 	}
 	var t *dataTable
 	switch m.tab {

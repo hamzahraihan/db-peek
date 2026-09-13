@@ -12,6 +12,9 @@ import (
 )
 
 func (m Model) View() string {
+	if m.showHelp {
+		return m.helpView()
+	}
 	switch m.screen {
 	case screenConns:
 		return m.connsView()
@@ -131,7 +134,7 @@ func (m Model) browseView() string {
 		b.WriteString(l + " " + r + "\n")
 	}
 
-	foot := dimStyle.Render(fitText("sidebar: /filter • enter preview • tab detail • r refresh • c conns • q quit", m.width))
+	foot := dimStyle.Render(fitText("sidebar: /filter • enter preview • tab detail • r refresh • c conns • q quit • ? keys", m.width))
 	if m.loading {
 		foot += "  " + "loading..."
 	}

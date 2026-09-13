@@ -20,7 +20,7 @@ func (m Model) formView() string {
 	if m.err != "" {
 		b.WriteString(errStyle.Render(m.err) + "\n")
 	}
-	b.WriteString(dimStyle.Render("click/tab switch field • enter save + connect • esc cancel") + "\n")
+	b.WriteString(dimStyle.Render("click/tab switch field • enter save + connect • esc cancel • ? keys") + "\n")
 	return b.String()
 }
 

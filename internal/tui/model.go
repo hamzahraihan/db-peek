@@ -73,6 +73,8 @@ type Model struct {
 	erOffset int
 	erCache  map[string][]dbpkg.ForeignKey
 
+	showHelp bool // which-key overlay (Task 7): modal, toggled by ?
+
 	// Mouse: rows per item in each picker (from the item delegates), plus
 	// last click for double-click detection and hover deduplication.
 	connsItemH     int

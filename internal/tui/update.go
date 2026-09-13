@@ -175,7 +175,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case queryDoneMsg:
 		if msg.seq != m.querySeq {
 			return m, nil // superseded by a newer run
-		}	
+		}
 		m.loading = false
 		if msg.err != nil {
 			m.err = msg.err.Error()
@@ -251,6 +251,22 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
+	// Which-key overlay is modal: while open every key except ?/esc
+	// (which close it) is swallowed before screen dispatch.
+	if m.showHelp {
+		if key == "?" || key == "esc" {
+			m.showHelp = false
+		}
+		return m, nil
+	}
+	// ? opens the overlay, except where ? is text: conns filter input,
+	// form inputs, or the query editor (tab==3, editor focused) where
+	// Postgres JSON operators need the rune.
+	if key == "?" && m.helpToggleAllowed() {
+		m.showHelp = true
+		return m, nil
+	}
+
 	switch m.screen {
 	case screenConns:
 		return m.connsKey(msg, key)
@@ -276,6 +292,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.detailKey(msg, key)
 	}
 	return m, nil
+}
+
+// helpToggleAllowed reports whether ? may open the help overlay on the
+// current screen. Typing contexts own the rune instead: the conns filter
+// input, either form input, and the focused query editor.
+func (m Model) helpToggleAllowed() bool {
+	switch m.screen {
+	case screenConns:
+		return !m.conns.SettingFilter()
+	case screenForm:
+		return !m.nameInput.Focused() && !m.connInput.Focused()
+	case screenBrowse:
+		return !(m.focusDetail && m.tab == 3 && m.queryFocus == 0)
+	}
+	return true
 }
 
 // disconnect closes the database and returns to the picker.
