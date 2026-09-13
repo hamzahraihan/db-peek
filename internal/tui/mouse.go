@@ -347,7 +347,7 @@ func (m Model) hoverList(y int, which screen) (tea.Model, tea.Cmd) {
 // selection: keyboard context (cursor, DDL echo) is untouched.
 func (m Model) hoverTable(y int) (tea.Model, tea.Cmd) {
 	if m.tab == 3 {
-		if y >= detailTableTop && y < detailTableTop+queryEditorH {
+		if y >= detailTableTop && y < queryResultsTop()-1 {
 			m.queryTable.SetHover(-1)
 			return m, nil
 		}
@@ -420,6 +420,9 @@ func (m Model) clickTable(x, y int) (tea.Model, tea.Cmd) {
 // clickQuery routes query-tab clicks: editor rows position the cursor and
 // take editor focus; results grid rows select and take results focus.
 func (m Model) clickQuery(x, y int) (tea.Model, tea.Cmd) {
+	if len(m.editor.Lines) == 0 {
+		return m, nil
+	}
 	if rel := y - detailTableTop; rel >= 0 && rel < queryEditorH {
 		m.queryFocus = 0
 		line := m.editor.OffY + rel

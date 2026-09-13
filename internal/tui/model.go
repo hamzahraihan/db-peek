@@ -229,7 +229,10 @@ func (m Model) detailTabLabels() []string {
 		for _, t := range full {
 			w += lipgloss.Width(inactiveTab.Render(t)) + 1
 		}
-		if w > m.width {
+		// The strip renders inside the detail pane, so compare against
+		// the pane width (not the terminal width) to keep render and
+		// hit-testing aligned. Unknown width still yields full labels.
+		if w > m.paneInnerW() {
 			return []string{"1", "2", "3", "4", "5"}
 		}
 	}

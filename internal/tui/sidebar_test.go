@@ -283,7 +283,6 @@ func TestDetailDimFollowsFocus(t *testing.T) {
 	defer lipgloss.SetColorProfile(termenv.Ascii)
 	newDetail := func(focusDetail bool) Model {
 		m := browseModel(t)
-		m.table = "users"
 		m.focusDetail = focusDetail
 		m.cols = []db.Column{{Name: "id"}, {Name: "name"}}
 		m.buildTables()
@@ -354,6 +353,33 @@ func TestPaneClickSwitchesFocus(t *testing.T) {
 	}
 }
 
+func TestDetailTabLabelsNarrowPane(t *testing.T) {
+	m := browseModel(t) // width 100 → paneInnerW 62, full strip wider
+	if got := m.detailTabLabels(); len(got) != 5 || got[0] != "1" || got[4] != "5" {
+		t.Fatalf("narrow pane must use short labels, got %q", got)
+	}
+	m.width = 250 // paneInnerW 212 fits the full strip
+	if got := m.detailTabLabels(); got[0] != "1 schema" || got[3] != "4 query" {
+		t.Fatalf("wide pane must use full labels, got %q", got)
+	}
+	m.width = 0 // unknown width still yields full labels
+	if got := m.detailTabLabels(); got[0] != "1 schema" {
+		t.Fatalf("unknown width must use full labels, got %q", got)
+	}
+}
+
+func TestQueryEditorQuestionMarkInserts(t *testing.T) {
+	m := browseModel(t)
+	m.screen = screenBrowse
+	m.focusDetail = true
+	m.tab = 3
+	m.queryFocus = 0
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m = u.(Model)
+	if !strings.Contains(m.editor.Text(), "?") {
+		t.Fatalf("typing ? in editor must insert text, got %q", m.editor.Text())
+	}
+}
 func TestQueryRunSeqGuard(t *testing.T) {
 	m := browseModel(t)
 	m.table = "users"

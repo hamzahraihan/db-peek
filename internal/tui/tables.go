@@ -90,6 +90,10 @@ func (m *Model) sizeTables() {
 		chrome++ // DDL echo row on the indexes tab, reserved whenever any
 		// index has DDL so cursor moves never change the layout height
 	}
+	if m.tab == 4 {
+		// ER placeholder reserves only the base chrome
+		// (title+blank+tabs+blank = 4); Task 6 adjusts for ER content.
+	}
 	h := m.contentH() - 2 - chrome
 	if h < 3 {
 		h = 3

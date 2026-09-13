@@ -391,24 +391,27 @@ func (m Model) detailKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	g := m.activeGrid()
-	switch key {
-	case "up", "k":
-		g.MoveUp(1)
-	case "down", "j":
-		g.MoveDown(1)
-	case "pgup":
-		g.MoveUp(g.Height())
-	case "pgdown":
-		g.MoveDown(g.Height())
-	case "ctrl+u":
-		g.MoveUp(g.Height() / 2)
-	case "ctrl+d":
-		g.MoveDown(g.Height() / 2)
-	case "home", "g":
-		g.GotoTop()
-	case "end", "G":
-		g.GotoBottom()
+	// Grid movement only applies to tabs 0-2 (tabs 3/4 route above).
+	if m.tab < 3 {
+		g := m.activeGrid()
+		switch key {
+		case "up", "k":
+			g.MoveUp(1)
+		case "down", "j":
+			g.MoveDown(1)
+		case "pgup":
+			g.MoveUp(g.Height())
+		case "pgdown":
+			g.MoveDown(g.Height())
+		case "ctrl+u":
+			g.MoveUp(g.Height() / 2)
+		case "ctrl+d":
+			g.MoveDown(g.Height() / 2)
+		case "home", "g":
+			g.GotoTop()
+		case "end", "G":
+			g.GotoBottom()
+		}
 	}
 	return m, nil
 }
@@ -424,6 +427,7 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "ctrl+r", "f5":
 			m.querySeq++
+			m.loading = true
 			return m, m.runQuery()
 		case "enter":
 			m.editor.Newline()
@@ -459,6 +463,9 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 			m.editor.End()
 			return m, nil
 		}
+		// Every rune inserts while editing, including "?" (Postgres JSON
+		// operators need it). Task 7's "?"-overlay must intercept "?"
+		// before detailKey routing except when the editor is focused.
 		if msg.Type == tea.KeyRunes {
 			for _, r := range msg.Runes {
 				m.editor.Insert(r)
@@ -497,6 +504,7 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+r", "f5", "r":
 		m.querySeq++
+		m.loading = true
 		return m, m.runQuery()
 	case "e":
 		m.queryFocus = 0
