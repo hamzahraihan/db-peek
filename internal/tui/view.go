@@ -33,23 +33,37 @@ func (m Model) fitHeader() string {
 	return titleStyle.Render("db-peek") + " " + dimStyle.Render(status)
 }
 
+// sideBoxTop is the terminal row of both pane top borders (just below header).
+const sideBoxTop = 1
+
 // explorerFirstRow is the terminal row of the first explorer tree row:
-// one app header row plus the explorer chrome (title + conn + separator).
-const explorerFirstRow = 4
+// y0 header, y1 side top border, y2 title, y3 conn, y4 separator,
+// y5 first tree row.
+const explorerFirstRow = 5
 
 // browseView renders the split layout: sidebar explorer tree (left) and
-// table detail (right). The separator is one column, and detail content
-// is padded to it so rows in both panes share terminal rows.
+// table detail (right), each wrapped in a rounded border. Boxes join with
+// one space gap; both have fixed outer height contentH() so rows align.
 func (m Model) browseView() string {
 	var b strings.Builder
 	b.WriteString(m.fitHeader() + "\n")
 
-	side := strings.Split(m.explorer.Render(m.sidebarW, m.contentH()), "\n")
+	innerW := m.sidebarW - 2
+	if innerW < 1 {
+		innerW = 1
+	}
+	detailW := m.paneInnerW()
+	innerH := m.contentH() - 2
+	if innerH < 1 {
+		innerH = 1
+	}
+
+	side := strings.Split(m.explorer.Render(innerW, innerH-4), "\n")
 	// Insert a dim separator after the conn line so the first tree row
-	// lands at explorerFirstRow: y0=app header, y1=title, y2=conn,
-	// y3=separator, y4=first tree row. Render height semantics unchanged.
+	// lands at explorerFirstRow: y0=app header, y1=border, y2=title,
+	// y3=conn, y4=separator, y5=first tree row.
 	if len(side) >= 2 {
-		sep := dimStyle.Render(fitText(strings.Repeat("─", m.sidebarW), m.sidebarW))
+		sep := dimStyle.Render(fitText(strings.Repeat("─", innerW), innerW))
 		side = append(side[:2], append([]string{sep}, side[2:]...)...)
 	}
 	// Sidebar footer/empty states (visual lines only, appended AFTER tree
@@ -60,11 +74,11 @@ func (m Model) browseView() string {
 		totalTables += len(s.Tables)
 	}
 	if totalTables == 0 {
-		side = append(side, dimStyle.Render(fitText("(no tables)", m.sidebarW)))
+		side = append(side, dimStyle.Render(fitText("(no tables)", innerW)))
 	} else {
 		for _, s := range m.explorer.Schemas {
 			if len(s.Tables) == 0 {
-				side = append(side, dimStyle.Render(fitText("  (empty) "+s.Name, m.sidebarW)))
+				side = append(side, dimStyle.Render(fitText("  (empty) "+s.Name, innerW)))
 			}
 		}
 	}
@@ -73,29 +87,48 @@ func (m Model) browseView() string {
 	if n != 1 {
 		schemaFooter = fmt.Sprintf("%d schemas", n)
 	}
-	side = append(side, explorerTitle.Render(fitText(schemaFooter, m.sidebarW)))
-	right := strings.Split(m.detailView(), "\n")
-	h := len(side)
-	if len(right) > h {
-		h = len(right)
+	side = append(side, explorerTitle.Render(fitText(schemaFooter, innerW)))
+	// Cap sidebar inner lines to innerW and pad/truncate to innerH.
+	for i, ln := range side {
+		if lipgloss.Width(ln) > innerW {
+			side[i] = ansi.Truncate(ln, innerW, "...")
+		}
 	}
-	w := m.sidebarW
+	for len(side) < innerH {
+		side = append(side, "")
+	}
+	if len(side) > innerH {
+		side = side[:innerH]
+	}
+	right := strings.Split(m.detailView(), "\n")
+	for i, ln := range right {
+		if lipgloss.Width(ln) > detailW {
+			right[i] = ansi.Truncate(ln, detailW, "...")
+		}
+	}
+	for len(right) < innerH {
+		right = append(right, "")
+	}
+	if len(right) > innerH {
+		right = right[:innerH]
+	}
+	sideBox := paneBorder(!m.focusDetail).Width(innerW).Height(innerH).Render(strings.Join(side, "\n"))
+	detailBox := paneBorder(m.focusDetail).Width(detailW).Height(innerH).Render(strings.Join(right, "\n"))
+	sideLines := strings.Split(sideBox, "\n")
+	detailLines := strings.Split(detailBox, "\n")
+	h := len(sideLines)
+	if len(detailLines) > h {
+		h = len(detailLines)
+	}
 	for i := range h {
 		l, r := "", ""
-		if i < len(side) {
-			l = side[i]
+		if i < len(sideLines) {
+			l = sideLines[i]
 		}
-		if i < len(right) {
-			r = right[i]
+		if i < len(detailLines) {
+			r = detailLines[i]
 		}
-		if lipgloss.Width(l) > w {
-			l = ansi.Truncate(l, w, "...")
-		}
-		pad := w - lipgloss.Width(l)
-		if pad < 0 {
-			pad = 0
-		}
-		b.WriteString(l + strings.Repeat(" ", pad) + "│" + r + "\n")
+		b.WriteString(l + " " + r + "\n")
 	}
 
 	foot := dimStyle.Render(fitText("sidebar: /filter • enter preview • tab detail • r refresh • c conns • q quit", m.width))

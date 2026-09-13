@@ -80,7 +80,8 @@ func TestExplorerClickPreviews(t *testing.T) {
 	m := browseModel(t)
 	m.explorer = fixtureExplorer()
 	m.loading = false
-	u, cmd := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 5})
+	// Bordered layout: first tree row at explorerFirstRow=5, orders idx1 → y=6.
+	u, cmd := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 6})
 	m = u.(Model)
 	if cmd == nil || m.table != "orders" {
 		t.Fatalf("want orders previewed, got %q", m.table)
@@ -90,9 +91,9 @@ func TestExplorerClickPreviews(t *testing.T) {
 func TestSidebarClickPreviewsInDetail(t *testing.T) {
 	m := browseModel(t)
 	// Fixture rows: 0=schema public, 1=orders, 2=col id, 3=col status,
-	// 4=customers. First tree row lands at explorerFirstRow=4, so
-	// orders sits at y=5 and customers at y=8.
-	u, cmd := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 5})
+	// 4=customers. First tree row lands at explorerFirstRow=5, so
+	// orders sits at y=6 and customers at y=9.
+	u, cmd := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 6})
 	m = u.(Model)
 	if cmd == nil || m.table != "orders" || !m.focusDetail || m.detailSeq != 1 {
 		t.Fatalf("want orders previewed seq 1, got %q seq %d focus=%v", m.table, m.detailSeq, m.focusDetail)
@@ -101,9 +102,9 @@ func TestSidebarClickPreviewsInDetail(t *testing.T) {
 	// and the seq bumps so the stale orders reply is ignored on arrival.
 	// loading is still true after click 1; reset to allow click 2.
 	// NOTE: click 1 toggled orders collapsed, so customers slid from
-	// idx 4 to idx 2 (y=6).
+	// idx 4 to idx 2 (y=7).
 	m.loading = false
-	u2, cmd2 := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 6})
+	u2, cmd2 := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 7})
 	m = u2.(Model)
 	if cmd2 == nil || m.table != "customers" || m.detailSeq != 2 {
 		t.Fatalf("want customers re-selected seq 2, got %q seq %d", m.table, m.detailSeq)
@@ -176,18 +177,18 @@ func TestRegexFiltering(t *testing.T) {
 }
 
 func TestFilteredMouseChrome(t *testing.T) {
-	// Explorer equivalent: the first tree row lands at explorerFirstRow=4
-	// in every filter state (title+conn+separator chrome above it).
+	// Explorer equivalent: the first tree row lands at explorerFirstRow=5
+	// in every filter state (border+title+conn+separator chrome above it).
 	m := browseModel(t)
 	m.explorer.SetFilter("cust")
 	m.resizeBrowse()
-	r, ok := m.explorer.RowAt(4 - explorerFirstRow)
+	r, ok := m.explorer.RowAt(5 - explorerFirstRow)
 	if !ok || r.Kind != RowSchema {
-		t.Fatalf("want schema row at y=4 when filtered, got %+v ok=%v", r, ok)
+		t.Fatalf("want schema row at y=5 when filtered, got %+v ok=%v", r, ok)
 	}
-	r, ok = m.explorer.RowAt(5 - explorerFirstRow)
+	r, ok = m.explorer.RowAt(6 - explorerFirstRow)
 	if !ok || r.Kind != RowTable || r.Table != "customers" {
-		t.Fatalf("want customers at y=5 when filtered, got %+v ok=%v", r, ok)
+		t.Fatalf("want customers at y=6 when filtered, got %+v ok=%v", r, ok)
 	}
 }
 
@@ -198,21 +199,23 @@ func TestFilteredMouseChrome(t *testing.T) {
 // "c" on the sidebar now disconnects by design (sidebarKeys).
 
 func TestExplorerConnRowClickIsNoop(t *testing.T) {
-	// Clicks on the conn row (y==2) away from × are no-ops.
+	// Clicks on the conn row (y==3, shifted down by the top border) away
+	// from × are no-ops.
 	m := browseModel(t)
 	m.loading = false
-	u, cmd := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 2})
+	u, cmd := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 3})
 	m = u.(Model)
 	if cmd != nil || m.table != "" || m.screen != screenBrowse {
 		t.Fatalf("conn click must be noop, got table=%q screen=%d cmd=%v", m.table, m.screen, cmd)
 	}
-	// Clicks with x >= sidebarW-2 on the conn row hit × and disconnect.
+	// Clicks with x >= sidebarW-2 on the conn row hit × and disconnect
+	// (× sits at interior x == sidebarW-2; x == sidebarW-1 is the border).
 	// (db=nil: fixture DB has no live SQL handle; disconnect's screen
 	// transition is what this asserts — Close is exercised in prod.)
 	m2 := browseModel(t)
 	m2.loading = false
 	m2.db = nil
-	u, _ = m2.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: m2.sidebarW - 1, Y: 2})
+	u, _ = m2.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: m2.sidebarW - 2, Y: 3})
 	m2 = u.(Model)
 	if m2.screen != screenConns {
 		t.Fatalf("× click must disconnect, got screen=%d", m2.screen)
@@ -308,14 +311,60 @@ func TestDetailDimFollowsFocus(t *testing.T) {
 func TestBrowseViewSidebarFitsWidth(t *testing.T) {
 	m := browseModel(t)
 	v := m.View()
-	for i, ln := range strings.Split(v, "\n") {
-		j := strings.Index(ln, "│")
-		if j < 0 {
-			continue // footer / header lines span full width
+	lines := strings.Split(v, "\n")
+	if !strings.Contains(v, "╭") {
+		t.Fatalf("bordered layout must draw box corners:\n%s", v)
+	}
+	for i, ln := range lines {
+		if lipgloss.Width(ln) > m.width {
+			t.Fatalf("line %d wraps at width %d: %q", i, m.width, ln)
 		}
-		left := ln[:j]
-		if lipgloss.Width(left) > m.sidebarW {
-			t.Fatalf("line %d sidebar width %d exceeds %d: %q", i, lipgloss.Width(left), m.sidebarW, ln)
+	}
+	// Sidebar box top border (line y=1) outer width must equal sidebarW.
+	if len(lines) > 1 && lipgloss.Width(lines[1]) >= len("╭") {
+		leftBox := strings.SplitN(lines[1], " ", 2)[0]
+		// leftBox is the sidebar top border up to the gap; strip ANSI.
+		if w := lipgloss.Width(leftBox); w != m.sidebarW {
+			t.Fatalf("sidebar box outer width %d != sidebarW %d: %q", w, m.sidebarW, lines[1])
 		}
+	}
+}
+
+func TestPaneClickSwitchesFocus(t *testing.T) {
+	m := browseModel(t)
+	m.loading = false
+	m.focusDetail = false
+	m.table = "users"
+	m.cols = []db.Column{{Name: "id"}}
+	m.buildTables()
+	m.sizeTables()
+	// Click inside detail box grid area focuses detail.
+	x := m.paneX() + 2
+	y := 6 + 2 + 2 // detailTableTop + header(2) + first data row
+	u, _ := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x, Y: y})
+	m = u.(Model)
+	if !m.focusDetail {
+		t.Fatal("click inside detail must focus detail")
+	}
+	// Click inside sidebar box focuses sidebar.
+	u, _ = m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 5})
+	m = u.(Model)
+	if m.focusDetail {
+		t.Fatal("click inside sidebar must focus sidebar")
+	}
+}
+
+func TestFocusedBorderGold(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+	m := browseModel(t)
+	m.loading = false
+	m.focusDetail = true
+	v := m.View()
+	// #EAB308 quantizes to 178 under ANSI256 in this lipgloss version
+	// (brief said 220); assert on the border corner to distinguish from
+	// the gold explorer title text.
+	if !strings.Contains(v, "38;5;178m╭") {
+		t.Fatalf("focused pane must draw gold border:\n%s", v)
 	}
 }

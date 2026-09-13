@@ -26,8 +26,8 @@ func (m Model) detailView() string {
 	if m.count >= 0 {
 		suffix = fmt.Sprintf("  •  %d rows", m.count)
 	}
-	if m.width > 0 && lipgloss.Width(title+suffix) > m.width-m.paneX()-2 {
-		title = "> " + fitText(m.table, m.width-m.paneX()-2-lipgloss.Width("> ")-lipgloss.Width(suffix))
+	if m.width > 0 && lipgloss.Width(title+suffix) > m.paneInnerW() {
+		title = "> " + fitText(m.table, m.paneInnerW()-lipgloss.Width("> ")-lipgloss.Width(suffix))
 	}
 	b.WriteString(titleStyle.Render(title))
 	if suffix != "" {
@@ -88,9 +88,5 @@ func (m Model) detailView() string {
 
 // paneW is the detail pane's usable width: terminal minus sidebar and separator.
 func (m Model) paneW() int {
-	w := m.width - m.paneX() - 2
-	if w < 20 {
-		w = 20
-	}
-	return w
+	return m.paneInnerW()
 }

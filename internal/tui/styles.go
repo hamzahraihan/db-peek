@@ -69,3 +69,11 @@ var (
 	explorerCount = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	explorerConn  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 )
+
+func paneBorder(focused bool) lipgloss.Style {
+	s := lipgloss.NewStyle().Border(lipgloss.RoundedBorder())
+	if focused {
+		return s.BorderForeground(lipgloss.Color("#EAB308"))
+	}
+	return s.BorderForeground(lipgloss.Color("#3A3A3A"))
+}

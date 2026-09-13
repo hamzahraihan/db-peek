@@ -68,11 +68,19 @@ func (m *Model) resizeBrowse() {
 // paneX is the first terminal column of the detail pane (after sidebar + separator).
 func (m Model) paneX() int { return m.sidebarW + 1 }
 
-func (m *Model) sizeTables() {
-	w := m.width - m.paneX() - 2
+// paneInnerW is the single width truth for the detail inner content:
+// terminal minus sidebar box, gap, detail borders, and the 1-col right
+// margin. Floor 20 keeps narrow terminals usable.
+func (m Model) paneInnerW() int {
+	w := m.width - m.paneX() - 3
 	if w < 20 {
 		w = 20
 	}
+	return w
+}
+
+func (m *Model) sizeTables() {
+	w := m.paneInnerW()
 	// Detail column: title, blank, tabs, blank, then the grid.
 	chrome := 4
 	if m.tab == 2 {
@@ -82,7 +90,7 @@ func (m *Model) sizeTables() {
 		chrome++ // DDL echo row on the indexes tab, reserved whenever any
 		// index has DDL so cursor moves never change the layout height
 	}
-	h := m.contentH() - chrome
+	h := m.contentH() - 2 - chrome
 	if h < 3 {
 		h = 3
 	}

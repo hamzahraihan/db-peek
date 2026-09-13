@@ -19,9 +19,9 @@ import (
 // filter state (verified against list.View output).
 const listFirstRow = 5
 
-// detailTableTop is the first terminal row of a detail table: header, table
-// title, blank, tabs, blank, then the table itself.
-const detailTableTop = 5
+// detailTableTop is the first terminal row of a detail table: header,
+// top border, table title, blank, tabs, blank, then the table itself.
+const detailTableTop = 6
 
 // handleMouse implements click-to-select, double-click-to-open, wheel scroll,
 // hover highlight, tab clicks, and form field focus. Coordinates are
@@ -50,27 +50,47 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case screenBrowse:
-		if msg.X < m.paneX() {
-			// Conn row (y==2) × affordance: clicks on the far right
-			// (x >= sidebarW-2) disconnect; elsewhere on the row is a no-op.
-			if msg.Y == 2 && msg.X >= m.sidebarW-2 {
+		sideOuterW := m.sidebarW
+		detailOuterW := m.paneInnerW() + 2
+		detailX0 := m.paneX()
+		contentBottom := m.contentH() // box rows y1..contentH()
+		inSideOuter := msg.X >= 0 && msg.X < sideOuterW && msg.Y >= 1 && msg.Y <= contentBottom
+		inDetailOuter := msg.X >= detailX0 && msg.X < detailX0+detailOuterW && msg.Y >= 1 && msg.Y <= contentBottom
+		if inSideOuter {
+			// Border cells are noop (no focus change, no selection).
+			if msg.X == 0 || msg.X == sideOuterW-1 || msg.Y == 1 || msg.Y == contentBottom {
+				return m, nil
+			}
+			// Conn row (y==3) × affordance: clicks on the far right
+			// (x >= sidebarW-2, i.e. x == sidebarW-2 interior) disconnect;
+			// elsewhere on the row is a no-op (but still focuses sidebar).
+			if msg.Y == 3 && msg.X >= m.sidebarW-2 {
 				m.disconnect()
 				return m, nil
 			}
+			m.focusDetail = false
 			if msg.Y >= explorerFirstRow {
 				return m.clickExplorer(msg.X, msg.Y)
 			}
-			return m, nil // sidebar chrome (title/conn/separator): no-op
+			return m, nil // sidebar chrome (title/conn/separator): focus only
 		}
-		if msg.Y == m.tabStripRow() {
-			return m.clickTabs(msg.X-m.paneX(), msg.Y)
+		if inDetailOuter {
+			// Detail border cells are noop.
+			if msg.X == detailX0 || msg.X == detailX0+detailOuterW-1 || msg.Y == 1 || msg.Y == contentBottom {
+				return m, nil
+			}
+			m.focusDetail = true
+			if msg.Y == m.tabStripRow() {
+				return m.clickTabs(msg.X-m.paneX()-1, msg.Y)
+			}
+			return m.clickTable(msg.Y)
 		}
-		return m.clickTable(msg.Y)
+		return m, nil // gap, right margin, footer: noop
 	case screenForm:
 		return m.clickForm(msg.Y)
 	default:
 		if msg.Y == m.tabStripRow() {
-			return m.clickTabs(msg.X-m.paneX(), msg.Y)
+			return m.clickTabs(msg.X-m.paneX()-1, msg.Y)
 		}
 		return m.clickTable(msg.Y)
 	}
@@ -237,17 +257,27 @@ func (m Model) hover(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case screenConns:
 		return m.hoverList(msg.Y, screenConns)
 	case screenBrowse:
-		if msg.X < m.paneX() {
+		// Hover never changes focusDetail (press only).
+		sideOuterW := m.sidebarW
+		detailOuterW := m.paneInnerW() + 2
+		detailX0 := m.paneX()
+		contentBottom := m.contentH()
+		inSideInterior := msg.X >= 1 && msg.X <= sideOuterW-2 && msg.Y >= 2 && msg.Y <= contentBottom-1
+		inDetailInterior := msg.X >= detailX0+1 && msg.X <= detailX0+detailOuterW-2 && msg.Y >= 2 && msg.Y <= contentBottom-1
+		if inSideInterior {
 			return m.hoverList(msg.Y, screenBrowse)
 		}
-		m.hoverTab = -1
-		if msg.Y == m.tabStripRow() {
-			return m.hoverTabs(msg.X - m.paneX()), nil
+		if inDetailInterior {
+			m.hoverTab = -1
+			if msg.Y == m.tabStripRow() {
+				return m.hoverTabs(msg.X - m.paneX() - 1), nil
+			}
+			return m.hoverTable(msg.Y)
 		}
-		return m.hoverTable(msg.Y)
+		return m, nil
 	default:
 		if msg.Y == m.tabStripRow() {
-			return m.hoverTabs(msg.X - m.paneX()), nil
+			return m.hoverTabs(msg.X - m.paneX() - 1), nil
 		}
 		m.hoverTab = -1
 		return m.hoverTable(msg.Y)
@@ -407,5 +437,5 @@ func (m Model) tabStripRow() int {
 			return i
 		}
 	}
-	return 3 // layout default: header, title, blank, tabs
+	return 4 // layout default: y0 header, y1 box border, y2 title, y3 blank, y4 tabs
 }
