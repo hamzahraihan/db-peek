@@ -191,7 +191,7 @@ func TestFocusedBorderGold(t *testing.T) {
 	m.loading = false
 	m.focusDetail = true
 	v := m.View()
-	if !strings.Contains(v, "38;5;220m") { // gold #EAB308 border
+	if !strings.Contains(v, "38;5;178m") { // gold #EAB308 border (quantizes to 178, not 220)
 		t.Fatalf("focused pane must draw gold border:\n%s", v)
 	}
 }
