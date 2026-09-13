@@ -198,13 +198,78 @@ func TestFilteredMouseChrome(t *testing.T) {
 // "c" on the sidebar now disconnects by design (sidebarKeys).
 
 func TestExplorerConnRowClickIsNoop(t *testing.T) {
-	// Clicks on the conn row (y==2) are no-ops: no preview, no disconnect.
+	// Clicks on the conn row (y==2) away from × are no-ops.
 	m := browseModel(t)
 	m.loading = false
 	u, cmd := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 2})
 	m = u.(Model)
 	if cmd != nil || m.table != "" || m.screen != screenBrowse {
 		t.Fatalf("conn click must be noop, got table=%q screen=%d cmd=%v", m.table, m.screen, cmd)
+	}
+	// Clicks with x >= sidebarW-2 on the conn row hit × and disconnect.
+	// (db=nil: fixture DB has no live SQL handle; disconnect's screen
+	// transition is what this asserts — Close is exercised in prod.)
+	m2 := browseModel(t)
+	m2.loading = false
+	m2.db = nil
+	u, _ = m2.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: m2.sidebarW - 1, Y: 2})
+	m2 = u.(Model)
+	if m2.screen != screenConns {
+		t.Fatalf("× click must disconnect, got screen=%d", m2.screen)
+	}
+}
+
+func TestColumnEnterPreviewsParent(t *testing.T) {
+	m := browseModel(t)
+	m.loading = false
+	// Fixture rows: 0=schema, 1=orders, 2=col id → cursor on column row.
+	m.explorer.Cursor = 2
+	if r, ok := m.explorer.RowAt(m.explorer.Cursor); !ok || r.Kind != RowColumn {
+		t.Fatalf("fixture setup: want column row at cursor 2, got %+v ok=%v", r, ok)
+	}
+	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(Model)
+	if m.table != "orders" || cmd == nil {
+		t.Fatalf("column enter must preview parent table, got %q cmd=%v", m.table, cmd)
+	}
+}
+
+func TestColumnsErrCollapsesTable(t *testing.T) {
+	m := browseModel(t)
+	// orders starts expanded in the fixture; an err must collapse it.
+	u, _ := m.Update(columnsLoadedMsg{schema: "public", table: "orders", err: errTestCount})
+	m = u.(Model)
+	if m.err == "" {
+		t.Fatal("err must set m.err")
+	}
+	tb, ok := m.explorer.tableByName("public", "orders")
+	if !ok || tb.Expanded {
+		t.Fatalf("err must collapse table node, got %+v ok=%v", tb, ok)
+	}
+}
+
+func TestSidebarFooterAndEmptyStates(t *testing.T) {
+	m := browseModel(t)
+	v := m.View()
+	if !strings.Contains(v, "1 schema") {
+		t.Fatalf("want gold footer '1 schema', got:\n%s", v)
+	}
+	// Empty schema renders a dim (empty) line after tree rows.
+	m2 := browseModel(t)
+	m2.explorer = NewExplorer("shop", []string{"public", "empty_s"})
+	m2.explorer.Schemas[0].Expanded = true
+	m2.explorer.Schemas[0].Tables = []TableNode{{Schema: "public", Name: "t", CountOK: true}}
+	m2.explorer.Schemas[1].Expanded = true
+	m2.resizeBrowse()
+	if v := m2.View(); !strings.Contains(v, "(empty)") || !strings.Contains(v, "2 schemas") {
+		t.Fatalf("want (empty) + '2 schemas', got:\n%s", v)
+	}
+	// Zero tables overall renders (no tables).
+	m3 := browseModel(t)
+	m3.explorer = NewExplorer("shop", []string{"public"})
+	m3.resizeBrowse()
+	if v := m3.View(); !strings.Contains(v, "(no tables)") {
+		t.Fatalf("want (no tables), got:\n%s", v)
 	}
 }
 

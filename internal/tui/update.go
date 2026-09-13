@@ -120,6 +120,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case columnsLoadedMsg:
 		if msg.err != nil {
 			m.err = msg.err.Error()
+			for si := range m.explorer.Schemas {
+				if m.explorer.Schemas[si].Name != msg.schema {
+					continue
+				}
+				for ti := range m.explorer.Schemas[si].Tables {
+					if m.explorer.Schemas[si].Tables[ti].Name == msg.table {
+						m.explorer.Schemas[si].Tables[ti].Expanded = false
+					}
+				}
+			}
 			return m, nil
 		}
 		for si := range m.explorer.Schemas {
@@ -246,7 +256,26 @@ func (m Model) sidebarKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 	case "enter":
 		row, ok := m.explorer.RowAt(m.explorer.Cursor)
 		m.explorer.Toggle()
-		if !ok || row.Kind != RowTable {
+		if !ok {
+			return m, nil
+		}
+		if row.Kind == RowColumn {
+			for si := range m.explorer.Schemas {
+				if m.explorer.Schemas[si].Name != row.Schema {
+					continue
+				}
+				for ti := range m.explorer.Schemas[si].Tables {
+					if m.explorer.Schemas[si].Tables[ti].Name == row.Table {
+						m.explorer.Schemas[si].Tables[ti].Expanded = true
+					}
+				}
+			}
+			colCmd := m.loadColumns(row.Schema, row.Table)
+			m2, inspectCmd := m.inspectTable(row.Table)
+			m = m2
+			return m, tea.Batch(colCmd, inspectCmd)
+		}
+		if row.Kind != RowTable {
 			return m, nil
 		}
 		colCmd := m.loadColumns(row.Schema, row.Table)

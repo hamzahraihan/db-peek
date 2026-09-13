@@ -51,6 +51,12 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case screenBrowse:
 		if msg.X < m.paneX() {
+			// Conn row (y==2) × affordance: clicks on the far right
+			// (x >= sidebarW-2) disconnect; elsewhere on the row is a no-op.
+			if msg.Y == 2 && msg.X >= m.sidebarW-2 {
+				m.disconnect()
+				return m, nil
+			}
 			if msg.Y >= explorerFirstRow {
 				return m.clickExplorer(msg.X, msg.Y)
 			}

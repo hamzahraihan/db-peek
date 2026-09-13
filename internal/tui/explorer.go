@@ -213,8 +213,13 @@ func (e *Explorer) Render(sidebarW, height int) string {
 	rows := e.VisibleRows()
 	var b strings.Builder
 	b.WriteString(explorerTitle.Render("explorer") + "\n")
-	conn := "● " + e.ConnName
-	b.WriteString(explorerConn.Render(fitText(conn, sidebarW-2)) + "\n")
+	connLeft := fitText("● "+e.ConnName, sidebarW-2)
+	gap := sidebarW - lipgloss.Width(connLeft) - 1
+	if gap < 1 {
+		gap = 1
+	}
+	connLine := explorerConn.Render(connLeft) + strings.Repeat(" ", gap) + dimStyle.Render("×")
+	b.WriteString(connLine + "\n")
 	var lines []string
 	for i, r := range rows {
 		var left, right string

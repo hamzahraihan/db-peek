@@ -116,6 +116,11 @@ func (m Model) loadOneCount(schema, table string) tea.Cmd {
 	}
 }
 
+// loadColumns resolves table names within the connection's default
+// schema/search_path (consistent with the ApproxCount parked ruling):
+// the schema arg scopes explorer state only; db.Columns takes a plain
+// table name used in information_schema queries. Do not qualify here and
+// do not change the db package.
 func (m Model) loadColumns(schema, table string) tea.Cmd {
 	db := m.db
 	return func() tea.Msg {

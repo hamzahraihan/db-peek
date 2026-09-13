@@ -4,6 +4,7 @@ package tui
 // no state changes. Dispatches to one renderer per screen.
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -51,6 +52,28 @@ func (m Model) browseView() string {
 		sep := dimStyle.Render(fitText(strings.Repeat("─", m.sidebarW), m.sidebarW))
 		side = append(side[:2], append([]string{sep}, side[2:]...)...)
 	}
+	// Sidebar footer/empty states (visual lines only, appended AFTER tree
+	// rows so explorerFirstRow hit-testing is unchanged and the cursor
+	// never lands on them). Render height semantics stay in explorer.go.
+	totalTables := 0
+	for _, s := range m.explorer.Schemas {
+		totalTables += len(s.Tables)
+	}
+	if totalTables == 0 {
+		side = append(side, dimStyle.Render(fitText("(no tables)", m.sidebarW)))
+	} else {
+		for _, s := range m.explorer.Schemas {
+			if len(s.Tables) == 0 {
+				side = append(side, dimStyle.Render(fitText("  (empty) "+s.Name, m.sidebarW)))
+			}
+		}
+	}
+	n := len(m.explorer.Schemas)
+	schemaFooter := "1 schema"
+	if n != 1 {
+		schemaFooter = fmt.Sprintf("%d schemas", n)
+	}
+	side = append(side, explorerTitle.Render(fitText(schemaFooter, m.sidebarW)))
 	right := strings.Split(m.detailView(), "\n")
 	h := len(side)
 	if len(right) > h {
