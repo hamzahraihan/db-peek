@@ -153,8 +153,14 @@ func (m Model) wheel(n int) (tea.Model, tea.Cmd) {
 				} else {
 					m.queryTable.MoveDown(steps)
 				}
-			case 4:
-				// ER placeholder: nothing to scroll until Task 6.
+		case 4:
+			if up {
+				if m.erOffset > 0 {
+					m.erOffset--
+				}
+			} else {
+				m.erOffset++
+			}
 			default:
 				if up {
 					m.rowTable.MoveUp(steps)
@@ -393,7 +399,11 @@ func (m Model) clickTable(x, y int) (tea.Model, tea.Cmd) {
 		return m.clickQuery(x, y)
 	}
 	if m.tab == 4 {
-		return m, nil // ER placeholder until Task 6
+		if name, ok := m.erHit(x, y); ok {
+			logMouse("  clickTable er y=%d -> inspect %s", y, name)
+			return m.inspectTable(name)
+		}
+		return m, nil
 	}
 	var t *dataTable
 	switch m.tab {
@@ -483,8 +493,8 @@ func (m Model) clickTabs(x, y int) (tea.Model, tea.Cmd) {
 	}
 	if i := m.tabAtX(x); i >= 0 {
 		logMouse("  clickTabs x=%d y=%d -> tab %d", x, y, i)
-		m.setTab(i)
-		return m, nil
+		cmd := m.setTab(i)
+		return m, cmd
 	}
 	logMouse("  clickTabs x=%d y=%d -> gap", x, y)
 	return m, nil

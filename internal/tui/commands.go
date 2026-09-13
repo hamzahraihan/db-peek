@@ -127,6 +127,18 @@ func (m Model) runQuery() tea.Cmd {
 	}
 }
 
+func (m Model) loadER(table string) tea.Cmd {
+	db, seq := m.db, m.erSeq
+	if links, ok := m.erCache[table]; ok {
+		return func() tea.Msg { return erLoadedMsg{table: table, links: links, seq: seq} }
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		links, err := db.ForeignKeys(ctx, table)
+		return erLoadedMsg{table: table, links: links, seq: seq, err: err}
+	}
+}
 // loadColumns resolves table names within the connection's default
 // schema/search_path (consistent with the ApproxCount parked ruling):
 // the schema arg scopes explorer state only; db.Columns takes a plain

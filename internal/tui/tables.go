@@ -68,6 +68,17 @@ func (m *Model) resizeBrowse() {
 // paneX is the first terminal column of the detail pane (after sidebar + separator).
 func (m Model) paneX() int { return m.sidebarW + 1 }
 
+// paneInnerH is the ER tab's usable height: terminal content minus the
+// detail borders and the base chrome (title+blank+tabs+blank = 4).
+// Floor 3 keeps narrow terminals usable.
+func (m Model) paneInnerH() int {
+	h := m.contentH() - 2 - 4
+	if h < 3 {
+		h = 3
+	}
+	return h
+}
+
 // paneInnerW is the single width truth for the detail inner content:
 // terminal minus sidebar box, gap, detail borders, and the 1-col right
 // margin. Floor 20 keeps narrow terminals usable.
@@ -91,8 +102,8 @@ func (m *Model) sizeTables() {
 		// index has DDL so cursor moves never change the layout height
 	}
 	if m.tab == 4 {
-		// ER placeholder reserves only the base chrome
-		// (title+blank+tabs+blank = 4); Task 6 adjusts for ER content.
+		// ER tab chrome = title+blank+tabs+blank (4); the grid area is
+		// unused (ER renders the full remainder via paneInnerH).
 	}
 	h := m.contentH() - 2 - chrome
 	if h < 3 {

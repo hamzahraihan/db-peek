@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	dbpkg "db-peek/internal/db"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -173,7 +175,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case queryDoneMsg:
 		if msg.seq != m.querySeq {
 			return m, nil // superseded by a newer run
-		}
+		}	
 		m.loading = false
 		if msg.err != nil {
 			m.err = msg.err.Error()
@@ -196,6 +198,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.queryTable.setData(qcols, qrows)
 		m.sizeTables()
+		return m, nil
+
+	case erLoadedMsg:
+		if msg.seq != m.erSeq {
+			return m, nil // superseded by a newer tab enter
+		}
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		if m.erCache == nil {
+			m.erCache = map[string][]dbpkg.ForeignKey{}
+		}
+		m.erCache[msg.table] = msg.links
+		if msg.table == m.table {
+			m.erLinks = msg.links
+			m.erOffset = 0
+			m.err = ""
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -345,26 +366,26 @@ func (m Model) detailKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		m.hoverTab = -1
 		return m, nil
 	case "tab", "right", "l":
-		m.setTab((m.tab + 1) % 5)
-		return m, nil
+		cmd := m.setTab((m.tab + 1) % 5)
+		return m, cmd
 	case "shift+tab", "left", "h":
-		m.setTab((m.tab + 4) % 5)
-		return m, nil
+		cmd := m.setTab((m.tab + 4) % 5)
+		return m, cmd
 	case "1":
-		m.setTab(0)
-		return m, nil
+		cmd := m.setTab(0)
+		return m, cmd
 	case "2":
-		m.setTab(1)
-		return m, nil
+		cmd := m.setTab(1)
+		return m, cmd
 	case "3":
-		m.setTab(2)
-		return m, nil
+		cmd := m.setTab(2)
+		return m, cmd
 	case "4":
-		m.setTab(3)
-		return m, nil
+		cmd := m.setTab(3)
+		return m, cmd
 	case "5":
-		m.setTab(4)
-		return m, nil
+		cmd := m.setTab(4)
+		return m, cmd
 	case "r":
 		m.loading = true
 		return m, m.loadDetail(m.table)
@@ -482,26 +503,26 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		m.hoverTab = -1
 		return m, nil
 	case "tab", "right", "l":
-		m.setTab((m.tab + 1) % 5)
-		return m, nil
+		cmd := m.setTab((m.tab + 1) % 5)
+		return m, cmd
 	case "shift+tab", "left", "h":
-		m.setTab((m.tab + 4) % 5)
-		return m, nil
+		cmd := m.setTab((m.tab + 4) % 5)
+		return m, cmd
 	case "1":
-		m.setTab(0)
-		return m, nil
+		cmd := m.setTab(0)
+		return m, cmd
 	case "2":
-		m.setTab(1)
-		return m, nil
+		cmd := m.setTab(1)
+		return m, cmd
 	case "3":
-		m.setTab(2)
-		return m, nil
+		cmd := m.setTab(2)
+		return m, cmd
 	case "4":
-		m.setTab(3)
-		return m, nil
+		cmd := m.setTab(3)
+		return m, cmd
 	case "5":
-		m.setTab(4)
-		return m, nil
+		cmd := m.setTab(4)
+		return m, cmd
 	case "ctrl+r", "f5", "r":
 		m.querySeq++
 		m.loading = true
@@ -533,8 +554,9 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// erKeys is the Task 6 placeholder for the er tab (tab 4): tab switching
-// works, cursor motion is a noop until the diagram lands.
+// erKeys handles keys on the er tab (tab 4): tab switching like every
+// other tab, up/k/down/j vertical scroll through the diagram, and r to
+// reload the links bypassing the cache.
 func (m Model) erKeys(_ tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc", "backspace":
@@ -543,26 +565,38 @@ func (m Model) erKeys(_ tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		m.hoverTab = -1
 		return m, nil
 	case "tab", "right", "l":
-		m.setTab((m.tab + 1) % 5)
-		return m, nil
+		cmd := m.setTab((m.tab + 1) % 5)
+		return m, cmd
 	case "shift+tab", "left", "h":
-		m.setTab((m.tab + 4) % 5)
-		return m, nil
+		cmd := m.setTab((m.tab + 4) % 5)
+		return m, cmd
 	case "1":
-		m.setTab(0)
-		return m, nil
+		cmd := m.setTab(0)
+		return m, cmd
 	case "2":
-		m.setTab(1)
-		return m, nil
+		cmd := m.setTab(1)
+		return m, cmd
 	case "3":
-		m.setTab(2)
-		return m, nil
+		cmd := m.setTab(2)
+		return m, cmd
 	case "4":
-		m.setTab(3)
-		return m, nil
+		cmd := m.setTab(3)
+		return m, cmd
 	case "5":
-		m.setTab(4)
+		cmd := m.setTab(4)
+		return m, cmd
+	case "up", "k":
+		if m.erOffset > 0 {
+			m.erOffset--
+		}
 		return m, nil
+	case "down", "j":
+		m.erOffset++
+		return m, nil
+	case "r":
+		delete(m.erCache, m.table)
+		m.erSeq++
+		return m, m.loadER(m.table)
 	}
 	return m, nil
 }

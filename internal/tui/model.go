@@ -68,6 +68,11 @@ type Model struct {
 	querySeq    int
 	queryTable  dataTable
 
+	erLinks  []dbpkg.ForeignKey
+	erSeq    int
+	erOffset int
+	erCache  map[string][]dbpkg.ForeignKey
+
 	// Mouse: rows per item in each picker (from the item delegates), plus
 	// last click for double-click detection and hover deduplication.
 	connsItemH     int
@@ -241,7 +246,15 @@ func (m Model) detailTabLabels() []string {
 
 // setTab switches detail tabs and refits the table to the new chrome
 // (pager line, DDL echo) so the layout always fills the terminal.
-func (m *Model) setTab(i int) {
+// Entering the ER tab bumps erSeq and kicks off an ER load (cached
+// when the table was already visited).
+func (m *Model) setTab(i int) tea.Cmd {
 	m.tab = i
+	if i == 4 {
+		m.erSeq++
+		m.sizeTables()
+		return m.loadER(m.table)
+	}
 	m.sizeTables()
+	return nil
 }

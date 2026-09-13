@@ -49,4 +49,10 @@ type (
 		seq    int
 		err    error
 	}
+	erLoadedMsg struct {
+		table string
+		links []dbpkg.ForeignKey
+		seq   int
+		err   error
+	}
 )
