@@ -246,6 +246,28 @@ func (e *Explorer) columnByName(schema, table, col string) (ColumnNode, bool) {
 	return ColumnNode{}, false
 }
 
+// explorerLine joins a plain left and plain right with gap spaces to
+// exactly fit w cells, then applies styleRight. Truncation runs on
+// plain text only, so styled output is never sliced mid-escape.
+func explorerLine(left, right string, styleRight func(string) string, w int) string {
+	if w < 4 {
+		w = 4
+	}
+	if lipgloss.Width(right) > w-2 {
+		right = fitText(right, w-2)
+	}
+	maxLeft := w - lipgloss.Width(right) - 1
+	if maxLeft < 1 {
+		maxLeft = 1
+	}
+	left = fitText(left, maxLeft)
+	gap := w - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 1 {
+		gap = 1
+	}
+	return left + strings.Repeat(" ", gap) + styleRight(right)
+}
+
 func (e *Explorer) Render(sidebarW, height int) string {
 	rows := e.VisibleRows()
 	if height < 1 {
@@ -278,7 +300,7 @@ func (e *Explorer) Render(sidebarW, height int) string {
 	b.WriteString(connLine + "\n")
 	var lines []string
 	for i, r := range vis {
-		var left, right string
+		var line string
 		switch r.Kind {
 		case RowSchema:
 			disc := "▸"
@@ -293,8 +315,9 @@ func (e *Explorer) Render(sidebarW, height int) string {
 					n = len(s.Tables)
 				}
 			}
-			left = disc + " 🗄 " + r.Schema
-			right = explorerCount.Render(fmt.Sprintf("%d", n))
+			left := disc + " 🗄 " + r.Schema
+			right := fmt.Sprintf("%d", n)
+			line = explorerLine(left, right, func(s string) string { return explorerCount.Render(s) }, sidebarW)
 		case RowTable:
 			tb, _ := e.tableByName(r.Schema, r.Table)
 			disc := "▸"
@@ -305,14 +328,16 @@ func (e *Explorer) Render(sidebarW, height int) string {
 			if tb.IsView {
 				icon = "👁"
 			}
-		left = "  " + disc + " " + icon + " " + r.Table
-		if tb.CountErr {
-			right = explorerCount.Render("?")
-		} else if tb.CountOK {
-			right = explorerCount.Render(humanizeCount(tb.Count))
-		} else {
-			right = explorerCount.Render("…")
-		}
+			left := "  " + disc + " " + icon + " " + r.Table
+			var right string
+			if tb.CountErr {
+				right = "?"
+			} else if tb.CountOK {
+				right = humanizeCount(tb.Count)
+			} else {
+				right = "…"
+			}
+			line = explorerLine(left, right, func(s string) string { return explorerCount.Render(s) }, sidebarW)
 		case RowColumn:
 			c, _ := e.columnByName(r.Schema, r.Table, r.Column)
 			icon := "◇"
@@ -321,15 +346,9 @@ func (e *Explorer) Render(sidebarW, height int) string {
 			} else if c.IsFK {
 				icon = "➤"
 			}
-			left = "    " + icon + " " + r.Column
-			right = explorerType.Render(c.DataType)
+			left := "    " + icon + " " + r.Column
+			line = explorerLine(left, c.DataType, func(s string) string { return explorerType.Render(s) }, sidebarW)
 		}
-		gap := sidebarW - lipgloss.Width(left) - lipgloss.Width(right) - 1
-		if gap < 1 {
-			gap = 1
-		}
-		line := left + strings.Repeat(" ", gap) + right
-		line = fitText(line, sidebarW)
 		if i+start == e.Cursor {
 			line = explorerSel.Render(line)
 		}
