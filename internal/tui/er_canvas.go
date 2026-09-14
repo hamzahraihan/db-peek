@@ -344,8 +344,35 @@ func (m Model) erCanvasView(innerW, innerH int) string {
 	canvas := erRenderCanvas(m.erSchema.tables, m.erSchema.links, innerW, innerH, m.erSel)
 	lines := erSliceViewport(canvas, m.erPanX, m.erPanY, innerW, innerH)
 	if len(m.erSchema.links) == 0 && len(m.erSchema.tables) > 0 {
-		lines = append(lines, dimStyle.Render("(no foreign keys — boxes only)"))
-		lines = lines[len(lines)-innerH:]
+		note := dimStyle.Render("(no foreign keys — boxes only)")
+		if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+			lines[len(lines)-1] = note // reuse trailing padding: keep box rows
+		} else {
+			lines = append(lines, note)
+			lines = lines[len(lines)-innerH:]
+		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// erNextBox cycles box selection in sorted order (n/p keys) because tab
+// is reserved for pane tab-switching.
+func erNextBox(tables []erTable, cur string, dir int) string {
+	if len(tables) == 0 {
+		return cur
+	}
+	names := make([]string, len(tables))
+	for i, t := range tables {
+		names[i] = t.name
+	}
+	sort.Strings(names)
+	idx := 0
+	for i, n := range names {
+		if n == cur {
+			idx = i
+			break
+		}
+	}
+	idx = (idx + dir + len(names)) % len(names)
+	return names[idx]
 }

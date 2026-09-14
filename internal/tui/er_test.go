@@ -17,10 +17,37 @@ func TestERViewThreeBoxes(t *testing.T) {
 		{FromTable: "refunds", FromColumn: "order_id", ToTable: "orders", ToColumn: "id"},
 	}
 	out := m.erView(80, 20)
-	for _, want := range []string{"orders", "customers", "refunds", "──▶", "◀──"} {
+	for _, want := range []string{"orders", "customers", "refunds", "🔑", "➤"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
+	}
+}
+
+func TestERHitBox(t *testing.T) {
+	m := browseModel(t)
+	m.table = "orders"
+	m.erSchema = erSchemaState{loaded: true,
+		tables: []erTable{{name: "customers"}, {name: "orders"}},
+		links:  []dbpkg.ForeignKey{{FromTable: "orders", FromColumn: "customer_id", ToTable: "customers", ToColumn: "id"}},
+	}
+	m.width = 120
+	m.sidebarW = 34
+	name, ok := m.erHit(1, 6)
+	if !ok || (name != "customers" && name != "orders") {
+		t.Fatalf("want a box hit, got %q ok=%v", name, ok)
+	}
+	if _, ok := m.erHit(119, 40); ok {
+		t.Fatal("gap click should miss")
+	}
+}
+
+func TestERViewUsesCanvas(t *testing.T) {
+	m := browseModel(t)
+	m.erSchema = erSchemaState{loaded: true, tables: []erTable{{name: "orders", cols: []dbpkg.Column{{Name: "id", Extra: "PK(1)"}}, pk: map[string]bool{"id": true}}}}
+	out := m.erView(60, 12)
+	if !strings.Contains(out, "orders") || !strings.Contains(out, "🔑") {
+		t.Fatalf("canvas view missing box markers:\n%s", out)
 	}
 }
 

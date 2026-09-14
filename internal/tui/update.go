@@ -679,18 +679,56 @@ func (m Model) erKeys(_ tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 	case "5":
 		cmd := m.setTab(4)
 		return m, cmd
-	case "up", "k":
-		if m.erOffset > 0 {
-			m.erOffset--
+	case "up", "k", "w":
+		if m.erPanY > 0 {
+			m.erPanY--
 		}
 		return m, nil
-	case "down", "j":
-		m.erOffset++
+	case "down", "j", "s":
+		m.erPanY++
+		return m, nil
+	case "a":
+		if m.erPanX > 0 {
+			m.erPanX -= 2
+		}
+		return m, nil
+	case "d":
+		m.erPanX += 2
+		return m, nil
+	case "pgup":
+		m.erPanY -= 10
+		if m.erPanY < 0 {
+			m.erPanY = 0
+		}
+		return m, nil
+	case "pgdown":
+		m.erPanY += 10
+		return m, nil
+	case "n":
+		m.erSel = erNextBox(m.erSchema.tables, m.erSel, 1)
+		return m, nil
+	case "p":
+		m.erSel = erNextBox(m.erSchema.tables, m.erSel, -1)
+		return m, nil
+	case "enter":
+		if m.erSel != "" {
+			return m.inspectTable(m.erSel)
+		}
 		return m, nil
 	case "r":
-		delete(m.erCache, m.table)
+		m.erSchema.loaded = false
 		m.erSeq++
-		return m, m.loadER(m.table)
+		var names []string
+		for _, t := range m.erSchema.tables {
+			names = append(names, t.name)
+		}
+		if len(names) == 0 && m.table != "" {
+			names = []string{m.table}
+		}
+		return m, m.loadERSchema("", names)
+	}
+	if key == "tab" {
+		return m, nil
 	}
 	return m, nil
 }
