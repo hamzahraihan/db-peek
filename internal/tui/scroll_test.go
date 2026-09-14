@@ -135,3 +135,35 @@ func TestSidebarWheelScrollsViewport(t *testing.T) {
 			m.explorer.Cursor, m.explorer.Offset, m.sidebarTreeH())
 	}
 }
+
+func TestSidebarClickUsesOffset(t *testing.T) {
+	m := browseModel(t)
+	m.height = 12 // tree viewport 3 rows; fixture rows 0..4
+	m.loading = false
+	m.focusDetail = false
+	m.explorer.Offset = 2
+	// First visible tree row (y=5) is fixture row 2 (col id → previews orders).
+	u, _ := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 5})
+	m = u.(Model)
+	if m.explorer.Cursor != 2 {
+		t.Fatalf("want cursor 2, got %d", m.explorer.Cursor)
+	}
+	if m.table != "orders" {
+		t.Fatalf("want orders previewed, got %q", m.table)
+	}
+	if m.focusDetail {
+		t.Fatal("sidebar click must not steal focus")
+	}
+}
+
+func TestSidebarHoverUsesOffset(t *testing.T) {
+	m := browseModel(t)
+	m.height = 12
+	m.loading = false
+	m.explorer.Offset = 2
+	u, _ := m.Update(tea.MouseMsg{Type: tea.MouseMotion, X: 2, Y: 6})
+	m = u.(Model)
+	if m.explorer.Cursor != 3 {
+		t.Fatalf("want cursor 3, got %d", m.explorer.Cursor)
+	}
+}
