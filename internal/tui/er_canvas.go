@@ -160,3 +160,192 @@ func erGridLayout(tables []erTable, innerW, innerH int) map[string]erRect {
 	}
 	return pos
 }
+
+// erRenderCanvas draws connectors first then boxes over them; returns all
+// canvas rows (unclipped). Caller slices via erSliceViewport.
+func erRenderCanvas(tables []erTable, links []dbpkg.ForeignKey, innerW, innerH int, sel string) []string {
+	if len(tables) == 0 {
+		return []string{"(no tables)"}
+	}
+	pos := erGridLayout(tables, innerW, innerH)
+	cw, chh := 0, 0
+	for _, r := range pos {
+		if r.x+r.w > cw {
+			cw = r.x + r.w
+		}
+		if r.y+r.h > chh {
+			chh = r.y + r.h
+		}
+	}
+	grid := make([][]rune, chh+2)
+	for i := range grid {
+		grid[i] = []rune(strings.Repeat(" ", cw+8))
+	}
+	set := func(x, y int, ch rune) {
+		if y < 0 || y >= len(grid) || x < 0 || x >= len(grid[y]) {
+			return
+		}
+		grid[y][x] = ch
+	}
+	linkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("12"))
+	_ = linkStyle
+	for _, l := range links {
+		a, okA := pos[l.FromTable]
+		b, okB := pos[l.ToTable]
+		if !okA || !okB {
+			continue
+		}
+		y1 := a.y + a.h/2
+		y2 := b.y + b.h/2
+		x1 := a.x + a.w
+		x2 := b.x
+		if l.FromTable == l.ToTable {
+			for x := x1; x < x1+3; x++ {
+				set(x, y1, '┄')
+			}
+			continue
+		}
+		if y1 == y2 {
+			step := 1
+			if x2 < x1 {
+				step = -1
+			}
+			for x := x1; x != x2; x += step {
+				set(x, y1, '┄')
+			}
+			continue
+		}
+		mid := (x1 + x2) / 2
+		if mid <= x1 && x2 > x1 {
+			mid = x1 + 2
+		}
+		stepX := 1
+		if mid < x1 {
+			stepX = -1
+		}
+		for x := x1; x != mid; x += stepX {
+			set(x, y1, '┄')
+		}
+		top, bot := y1, y2
+		if bot < top {
+			top, bot = bot, top
+		}
+		for y := top; y <= bot; y++ {
+			if y == y1 {
+				continue
+			}
+			set(mid, y, '┆')
+		}
+		step := 1
+		if x2 < mid {
+			step = -1
+		}
+		for x := mid; x != x2; x += step {
+			set(x, y2, '┄')
+		}
+	}
+	rows := make([]string, len(grid))
+	for i, r := range grid {
+		rows[i] = strings.TrimRight(string(r), " ")
+	}
+	// Overlay boxes (box wins over connectors).
+	type item struct {
+		name string
+		r    erRect
+	}
+	var items []item
+	for _, t := range tables {
+		items = append(items, item{t.name, pos[t.name]})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].r.y < items[j].r.y })
+	byName := map[string]erTable{}
+	for _, t := range tables {
+		byName[t.name] = t
+	}
+	for _, it := range items {
+		bl := erBoxPlainLines(byName[it.name], len(tables))
+		for dy, ln := range bl {
+			y := it.r.y + dy
+			if y < 0 || y >= len(rows) {
+				continue
+			}
+			nr := []rune(rows[y])
+			need := it.r.x + lipgloss.Width(ln) + 1
+			for len(nr) < need {
+				nr = append(nr, ' ')
+			}
+			copy(nr[it.r.x:], []rune(ln))
+			rows[y] = string(nr)
+		}
+	}
+	return rows
+}
+
+// erBoxPlainLines is the geometry twin of erBoxLines without ANSI styles,
+// used for canvas overlay so box cells overwrite connectors exactly.
+func erBoxPlainLines(t erTable, total int) []string {
+	cols, more := erVisibleCols(t, total)
+	w := erBoxWidth(t)
+	out := []string{fitText("▦ "+t.name, w)}
+	for _, c := range cols {
+		icon := "◇"
+		switch {
+		case t.pk[c.Name]:
+			icon = "🔑"
+		case t.fk[c.Name]:
+			icon = "➤"
+		}
+		out = append(out, fitText(icon+" "+c.Name+" "+erTypeHint(c.Type), w))
+	}
+	if more > 0 {
+		out = append(out, fitText("… "+strconv.Itoa(more)+" more", w))
+	}
+	return out
+}
+
+func erSliceViewport(canvas []string, panX, panY, w, h int) []string {
+	if h < 1 {
+		h = 1
+	}
+	if panY < 0 {
+		panY = 0
+	}
+	if panX < 0 {
+		panX = 0
+	}
+	if panY > len(canvas)-1 {
+		panY = len(canvas) - 1
+	}
+	if panY < 0 {
+		panY = 0
+	}
+	out := []string{}
+	for i := panY; i < panY+h && i < len(canvas); i++ {
+		rs := []rune(canvas[i])
+		start := panX
+		if start > len(rs) {
+			start = len(rs)
+		}
+		out = append(out, fitText(string(rs[start:]), w))
+	}
+	for len(out) < h {
+		out = append(out, "")
+	}
+	return out
+}
+
+func (m Model) erCanvasView(innerW, innerH int) string {
+	if !m.erSchema.loaded {
+		if m.loading {
+			return "loading..."
+		}
+		return "(no ER data — press 5 to load)"
+	}
+	canvas := erRenderCanvas(m.erSchema.tables, m.erSchema.links, innerW, innerH, m.erSel)
+	lines := erSliceViewport(canvas, m.erPanX, m.erPanY, innerW, innerH)
+	if len(m.erSchema.links) == 0 && len(m.erSchema.tables) > 0 {
+		lines = append(lines, dimStyle.Render("(no foreign keys — boxes only)"))
+		lines = lines[len(lines)-innerH:]
+	}
+	return strings.Join(lines, "\n")
+}

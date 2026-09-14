@@ -41,6 +41,33 @@ func TestERCanvasBoxes(t *testing.T) {
 		}
 	}
 }
+func TestERCanvasConnectors(t *testing.T) {
+	tables := []erTable{
+		{name: "customers", cols: []dbpkg.Column{{Name: "id", Extra: "PK(1)"}}, pk: map[string]bool{"id": true}},
+		{name: "orders", cols: []dbpkg.Column{{Name: "id", Extra: "PK(1)"}, {Name: "customer_id"}}, pk: map[string]bool{"id": true}, fk: map[string]bool{"customer_id": true}},
+	}
+	links := []dbpkg.ForeignKey{{FromTable: "orders", FromColumn: "customer_id", ToTable: "customers", ToColumn: "id"}}
+	canvas := erRenderCanvas(tables, links, 80, 20, "orders")
+	joined := strings.Join(canvas, "\n")
+	if !strings.Contains(joined, "┄") && !strings.Contains(joined, "┆") {
+		t.Fatalf("missing connector chars in:\n%s", joined)
+	}
+	for _, want := range []string{"customers", "orders"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing box %q", want)
+		}
+	}
+}
+
+func TestERPanClamp(t *testing.T) {
+	m := browseModel(t)
+	m.erPanX, m.erPanY = 9999, 9999
+	out := m.erCanvasView(40, 10)
+	if out == "" {
+		t.Fatal("viewport should render even when pan is out of range")
+	}
+}
+
 func TestERSchemaStateDefaults(t *testing.T) {
 	m := browseModel(t)
 	if m.erSchema.loaded {
