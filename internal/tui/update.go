@@ -219,6 +219,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case erSchemaLoadedMsg:
+		if msg.seq != m.erSeq {
+			return m, nil // superseded
+		}
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			m.erSchema.err = msg.err.Error()
+			return m, nil
+		}
+		m.erSchema = erSchemaState{tables: msg.tables, links: msg.links, loaded: true}
+		m.erSel = m.table
+		m.erPanX, m.erPanY = 0, 0
+		m.err = ""
+		return m, nil
+
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 

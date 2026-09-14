@@ -285,7 +285,19 @@ func (m *Model) setTab(i int) tea.Cmd {
 	if i == 4 {
 		m.erSeq++
 		m.sizeTables()
-		return m.loadER(m.table)
+		if m.erSchema.loaded {
+			return nil
+		}
+		var names []string
+		for _, s := range m.explorer.Schemas {
+			for _, tb := range s.Tables {
+				names = append(names, tb.Name)
+			}
+		}
+		if len(names) == 0 && m.table != "" {
+			names = []string{m.table}
+		}
+		return m.loadERSchema("", names)
 	}
 	m.sizeTables()
 	return nil

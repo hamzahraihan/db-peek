@@ -33,3 +33,28 @@ func TestERSchemaStateDefaults(t *testing.T) {
 		t.Fatal("pan should start at 0,0")
 	}
 }
+
+func TestERSchemaLoadedMsgApplies(t *testing.T) {
+	m := browseModel(t)
+	m.table = "orders"
+	m.erSeq = 7
+	msg := erSchemaLoadedMsg{
+		tables: []erTable{{name: "orders"}, {name: "customers"}},
+		links:  []dbpkg.ForeignKey{{FromTable: "orders", FromColumn: "customer_id", ToTable: "customers", ToColumn: "id"}},
+		seq:    7,
+	}
+	nm, _ := m.Update(msg)
+	got := nm.(Model)
+	if !got.erSchema.loaded || len(got.erSchema.tables) != 2 || len(got.erSchema.links) != 1 {
+		t.Fatalf("schema not applied: %+v", got.erSchema)
+	}
+	if got.erSel != "orders" {
+		t.Fatalf("erSel = %q, want orders", got.erSel)
+	}
+	// stale seq dropped
+	stale := erSchemaLoadedMsg{tables: []erTable{{name: "x"}}, seq: 6}
+	nm2, _ := got.Update(stale)
+	if len(nm2.(Model).erSchema.tables) != 2 {
+		t.Fatal("stale msg should be dropped")
+	}
+}
