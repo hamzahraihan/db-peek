@@ -420,6 +420,17 @@ func TestPaneClickSwitchesFocus(t *testing.T) {
 	if m.focusDetail {
 		t.Fatal("click inside sidebar must focus sidebar")
 	}
+	// Border clicks select nothing but must still switch the pane.
+	u, _ = m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: m.paneX(), Y: 10})
+	m = u.(Model)
+	if !m.focusDetail {
+		t.Fatal("click on detail border must focus detail")
+	}
+	u, _ = m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 0, Y: 10})
+	m = u.(Model)
+	if m.focusDetail {
+		t.Fatal("click on sidebar border must focus sidebar")
+	}
 }
 
 func TestDetailTabLabelsNarrowPane(t *testing.T) {

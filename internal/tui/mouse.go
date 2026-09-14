@@ -68,7 +68,8 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		inSideOuter := msg.X >= 0 && msg.X < sideOuterW && msg.Y >= 1 && msg.Y <= contentBottom
 		inDetailOuter := msg.X >= detailX0 && msg.X < detailX0+detailOuterW && msg.Y >= 1 && msg.Y <= contentBottom
 		if inSideOuter {
-			// Border cells are noop (no focus change, no selection).
+			m.focusDetail = false
+			// Border cells select no row, but still focus the pane.
 			if msg.X == 0 || msg.X == sideOuterW-1 || msg.Y == 1 || msg.Y == contentBottom {
 				return m, nil
 			}
@@ -79,18 +80,17 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				m.disconnect()
 				return m, nil
 			}
-			m.focusDetail = false
 			if msg.Y >= explorerFirstRow {
 				return m.clickExplorer(msg.X, msg.Y)
 			}
 			return m, nil // sidebar chrome (title/conn/separator): focus only
 		}
 		if inDetailOuter {
-			// Detail border cells are noop.
+			m.focusDetail = true
+			// Detail border cells select no row, but still focus the pane.
 			if msg.X == detailX0 || msg.X == detailX0+detailOuterW-1 || msg.Y == 1 || msg.Y == contentBottom {
 				return m, nil
 			}
-			m.focusDetail = true
 			if msg.Y == m.tabStripRow() {
 				return m.clickTabs(msg.X-m.paneX()-1, msg.Y)
 			}
