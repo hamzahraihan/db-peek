@@ -72,6 +72,7 @@ func (m *Model) resizeBrowse() {
 		w = 44
 	}
 	m.sidebarW = w
+	m.explorer.ensureVisible(m.sidebarTreeH())
 	m.sizeTables()
 }
 

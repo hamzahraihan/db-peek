@@ -340,12 +340,15 @@ func (m Model) sidebarKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "up", "k":
 		m.explorer.MoveUp()
+		m.explorer.ensureVisible(m.sidebarTreeH())
 		return m, nil
 	case "down", "j":
 		m.explorer.MoveDown()
+		m.explorer.ensureVisible(m.sidebarTreeH())
 		return m, nil
 	case "left", "right":
 		m.explorer.Toggle()
+		m.explorer.ensureVisible(m.sidebarTreeH())
 		return m, nil
 	case "enter":
 		row, ok := m.explorer.RowAt(m.explorer.Cursor)
@@ -412,9 +415,11 @@ func (m Model) filterKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "up":
 		m.explorer.MoveUp()
+		m.explorer.ensureVisible(m.sidebarTreeH())
 		return m, nil
 	case "down":
 		m.explorer.MoveDown()
+		m.explorer.ensureVisible(m.sidebarTreeH())
 		return m, nil
 	}
 	var cmd tea.Cmd

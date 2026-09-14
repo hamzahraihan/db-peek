@@ -136,6 +136,7 @@ func (m Model) wheel(n int) (tea.Model, tea.Cmd) {
 					m.explorer.MoveDown()
 				}
 			}
+			m.explorer.ensureVisible(m.sidebarTreeH())
 		} else {
 			switch m.tab {
 			case 0:

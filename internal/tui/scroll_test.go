@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )
@@ -102,5 +103,35 @@ func TestSidebarScrollbarOverlay(t *testing.T) {
 	small.Schemas[0].Tables = []TableNode{{Schema: "s", Name: "only", CountOK: true}}
 	if out := small.Render(32, 10); strings.Contains(out, "█") || strings.Contains(out, "│") {
 		t.Fatalf("no scrollbar without overflow:\n%s", out)
+	}
+}
+
+func TestSidebarKeyboardScrollsViewport(t *testing.T) {
+	m := browseModel(t)
+	m.height = 12 // tree viewport = 12-3-2-4 = 3 rows; fixture has 5 rows
+	m.loading = false
+	down := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}
+	for i := 0; i < 4; i++ {
+		u, _ := m.Update(down)
+		m = u.(Model)
+	}
+	if m.explorer.Cursor != 4 {
+		t.Fatalf("want cursor 4, got %d", m.explorer.Cursor)
+	}
+	if m.explorer.Offset != 2 { // 4-3+1
+		t.Fatalf("want offset 2, got %d", m.explorer.Offset)
+	}
+}
+
+func TestSidebarWheelScrollsViewport(t *testing.T) {
+	m := browseModel(t)
+	m.height = 12
+	m.loading = false
+	m.focusDetail = false
+	u, _ := m.Update(tea.MouseMsg{Type: tea.MouseWheelDown})
+	m = u.(Model)
+	if m.explorer.Offset == 0 && m.explorer.Cursor >= m.sidebarTreeH() {
+		t.Fatalf("wheel must pull viewport along: cursor=%d offset=%d treeH=%d",
+			m.explorer.Cursor, m.explorer.Offset, m.sidebarTreeH())
 	}
 }
