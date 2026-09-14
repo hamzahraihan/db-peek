@@ -136,6 +136,7 @@ func (m Model) wheel(n int) (tea.Model, tea.Cmd) {
 					m.explorer.MoveDown()
 				}
 			}
+			m.explorer.ensureVisible(m.sidebarTreeH())
 		} else {
 			switch m.tab {
 			case 0:
@@ -213,7 +214,7 @@ func (m Model) clickList(y int, which screen) (tea.Model, tea.Cmd) {
 // Clicks on sidebar chrome (title/conn/separator) are no-ops — disconnect
 // stays on c/esc keys.
 func (m Model) clickExplorer(x, y int) (tea.Model, tea.Cmd) {
-	idx := y - explorerFirstRow
+	idx := y - explorerFirstRow + m.explorer.Offset
 	r, ok := m.explorer.RowAt(idx)
 	if !ok {
 		logMouse("  clickExplorer x=%d y=%d -> miss", x, y)
@@ -339,7 +340,7 @@ func (m Model) tabAtX(x int) int {
 func (m Model) hoverList(y int, which screen) (tea.Model, tea.Cmd) {
 	if which == screenBrowse {
 		// Sidebar hover follows the explorer cursor; no preview.
-		idx := y - explorerFirstRow
+		idx := y - explorerFirstRow + m.explorer.Offset
 		if _, ok := m.explorer.RowAt(idx); !ok {
 			return m, nil
 		}

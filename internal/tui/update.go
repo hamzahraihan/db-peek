@@ -340,12 +340,15 @@ func (m Model) sidebarKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "up", "k":
 		m.explorer.MoveUp()
+		m.explorer.ensureVisible(m.sidebarTreeH())
 		return m, nil
 	case "down", "j":
 		m.explorer.MoveDown()
+		m.explorer.ensureVisible(m.sidebarTreeH())
 		return m, nil
 	case "left", "right":
 		m.explorer.Toggle()
+		m.explorer.ensureVisible(m.sidebarTreeH())
 		return m, nil
 	case "enter":
 		row, ok := m.explorer.RowAt(m.explorer.Cursor)
@@ -412,9 +415,11 @@ func (m Model) filterKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "up":
 		m.explorer.MoveUp()
+		m.explorer.ensureVisible(m.sidebarTreeH())
 		return m, nil
 	case "down":
 		m.explorer.MoveDown()
+		m.explorer.ensureVisible(m.sidebarTreeH())
 		return m, nil
 	}
 	var cmd tea.Cmd
@@ -712,11 +717,12 @@ func (m Model) activateConn(name string) (Model, tea.Cmd) {
 
 // inspectTable previews one table in the detail pane; shared by sidebar
 // enter/click. The seq guard drops replies from superseded selections.
-// Previewing blurs the filter input (the text stays applied).
+// Previewing blurs the filter input (the text stays applied) but never
+// steals pane focus: sidebar previews stay in the sidebar (Tab jumps to
+// detail), detail-initiated previews keep detail focus.
 func (m Model) inspectTable(name string) (Model, tea.Cmd) {
 	m.filtering = false
 	m.filterInput.Blur()
-	m.focusDetail = true
 	m.table = name
 	m.tab = 0
 	m.loading = true

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type RowKind int
@@ -52,6 +53,7 @@ type Explorer struct {
 	Schemas  []SchemaNode
 	Cursor   int
 	Filter   string
+	Offset   int // first visible tree-row index into VisibleRows
 }
 
 func NewExplorer(connName string, schemas []string) Explorer {
@@ -169,6 +171,42 @@ func (e *Explorer) Toggle() {
 func (e *Explorer) SetFilter(f string) {
 	e.Filter = f
 	e.Cursor = 0
+	e.Offset = 0
+}
+
+// ensureVisible keeps Cursor inside [Offset, Offset+viewH) and Offset
+// inside its valid range. Call after every cursor/row mutation.
+func (e *Explorer) ensureVisible(viewH int) {
+	if viewH < 1 {
+		viewH = 1
+	}
+	n := len(e.VisibleRows())
+	if n == 0 {
+		e.Cursor, e.Offset = 0, 0
+		return
+	}
+	if e.Cursor < 0 {
+		e.Cursor = 0
+	}
+	if e.Cursor >= n {
+		e.Cursor = n - 1
+	}
+	maxOff := n - viewH
+	if maxOff < 0 {
+		maxOff = 0
+	}
+	if e.Offset < 0 {
+		e.Offset = 0
+	}
+	if e.Offset > maxOff {
+		e.Offset = maxOff
+	}
+	if e.Cursor < e.Offset {
+		e.Offset = e.Cursor
+	}
+	if e.Cursor >= e.Offset+viewH {
+		e.Offset = e.Cursor - viewH + 1
+	}
 }
 
 func humanizeCount(n int64) string {
@@ -209,8 +247,63 @@ func (e *Explorer) columnByName(schema, table, col string) (ColumnNode, bool) {
 	return ColumnNode{}, false
 }
 
+// explorerLine joins a plain left and plain right with gap spaces to
+// exactly fit w cells, then applies styleRight. Truncation runs on
+// plain text only, so styled output is never sliced mid-escape.
+func explorerLine(left, right string, styleRight func(string) string, w int) string {
+	if w < 4 {
+		w = 4
+	}
+	if lipgloss.Width(right) > w-2 {
+		right = fitText(right, w-2)
+	}
+	maxLeft := w - lipgloss.Width(right) - 1
+	if maxLeft < 1 {
+		maxLeft = 1
+	}
+	left = fitText(left, maxLeft)
+	gap := w - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 1 {
+		gap = 1
+	}
+	return left + strings.Repeat(" ", gap) + styleRight(right)
+}
+
+// setLastCell overlays ch on the final cell of an ANSI-styled line of
+// width w, padding short lines with spaces first.
+func setLastCell(line, ch string, w int) string {
+	if w < 1 {
+		return line
+	}
+	if vw := lipgloss.Width(line); vw < w-1 {
+		line += strings.Repeat(" ", w-1-vw)
+	} else if vw >= w {
+		line = ansi.Truncate(line, w-1, "")
+	}
+	return line + ch
+}
+
 func (e *Explorer) Render(sidebarW, height int) string {
 	rows := e.VisibleRows()
+	if height < 1 {
+		height = 1
+	}
+	start := e.Offset
+	maxStart := len(rows) - height
+	if maxStart < 0 {
+		maxStart = 0
+	}
+	if start < 0 {
+		start = 0
+	}
+	if start > maxStart {
+		start = maxStart
+	}
+	end := start + height
+	if end > len(rows) {
+		end = len(rows)
+	}
+	vis := rows[start:end]
 	var b strings.Builder
 	b.WriteString(explorerTitle.Render("explorer") + "\n")
 	connLeft := fitText("● "+e.ConnName, sidebarW-2)
@@ -221,8 +314,8 @@ func (e *Explorer) Render(sidebarW, height int) string {
 	connLine := explorerConn.Render(connLeft) + strings.Repeat(" ", gap) + dimStyle.Render("×")
 	b.WriteString(connLine + "\n")
 	var lines []string
-	for i, r := range rows {
-		var left, right string
+	for i, r := range vis {
+		var line string
 		switch r.Kind {
 		case RowSchema:
 			disc := "▸"
@@ -237,8 +330,9 @@ func (e *Explorer) Render(sidebarW, height int) string {
 					n = len(s.Tables)
 				}
 			}
-			left = disc + " 🗄 " + r.Schema
-			right = explorerCount.Render(fmt.Sprintf("%d", n))
+			left := disc + " 🗄 " + r.Schema
+			right := fmt.Sprintf("%d", n)
+			line = explorerLine(left, right, func(s string) string { return explorerCount.Render(s) }, sidebarW)
 		case RowTable:
 			tb, _ := e.tableByName(r.Schema, r.Table)
 			disc := "▸"
@@ -249,14 +343,16 @@ func (e *Explorer) Render(sidebarW, height int) string {
 			if tb.IsView {
 				icon = "👁"
 			}
-		left = "  " + disc + " " + icon + " " + r.Table
-		if tb.CountErr {
-			right = explorerCount.Render("?")
-		} else if tb.CountOK {
-			right = explorerCount.Render(humanizeCount(tb.Count))
-		} else {
-			right = explorerCount.Render("…")
-		}
+			left := "  " + disc + " " + icon + " " + r.Table
+			var right string
+			if tb.CountErr {
+				right = "?"
+			} else if tb.CountOK {
+				right = humanizeCount(tb.Count)
+			} else {
+				right = "…"
+			}
+			line = explorerLine(left, right, func(s string) string { return explorerCount.Render(s) }, sidebarW)
 		case RowColumn:
 			c, _ := e.columnByName(r.Schema, r.Table, r.Column)
 			icon := "◇"
@@ -265,22 +361,36 @@ func (e *Explorer) Render(sidebarW, height int) string {
 			} else if c.IsFK {
 				icon = "➤"
 			}
-			left = "    " + icon + " " + r.Column
-			right = explorerType.Render(c.DataType)
+			left := "    " + icon + " " + r.Column
+			line = explorerLine(left, c.DataType, func(s string) string { return explorerType.Render(s) }, sidebarW)
 		}
-		gap := sidebarW - lipgloss.Width(left) - lipgloss.Width(right) - 1
-		if gap < 1 {
-			gap = 1
-		}
-		line := left + strings.Repeat(" ", gap) + right
-		line = fitText(line, sidebarW)
-		if i == e.Cursor {
+		if i+start == e.Cursor {
 			line = explorerSel.Render(line)
 		}
 		lines = append(lines, line)
 	}
 	if height > 0 && len(lines) > height {
 		lines = lines[:height]
+	}
+	if len(rows) > height {
+		thumbH := height * height / len(rows)
+		if thumbH < 1 {
+			thumbH = 1
+		}
+		thumbStart := 0
+		if span := len(rows) - height; span > 0 {
+			thumbStart = start * (height - thumbH) / span
+		}
+		for i := range lines {
+			if i >= height {
+				break
+			}
+			ch, st := "│", scrollTrackStyle
+			if i >= thumbStart && i < thumbStart+thumbH {
+				ch, st = "█", scrollThumbStyle
+			}
+			lines[i] = setLastCell(lines[i], st.Render(ch), sidebarW)
+		}
 	}
 	b.WriteString(strings.Join(lines, "\n"))
 	return b.String()

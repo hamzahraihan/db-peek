@@ -48,6 +48,16 @@ func (m Model) contentH() int {
 	return h
 }
 
+// sidebarTreeH is the number of explorer tree rows visible in the
+// sidebar: inner box height minus title, conn, separator, footer.
+func (m Model) sidebarTreeH() int {
+	h := m.contentH() - 2 - 4
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
+
 // resizeBrowse fits the sidebar and detail grids to the terminal.
 // The sidebar takes a fixed slice; detail gets the remainder.
 func (m *Model) resizeBrowse() {
@@ -62,6 +72,7 @@ func (m *Model) resizeBrowse() {
 		w = 44
 	}
 	m.sidebarW = w
+	m.explorer.ensureVisible(m.sidebarTreeH())
 	m.sizeTables()
 }
 
