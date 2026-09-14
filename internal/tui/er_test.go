@@ -24,6 +24,23 @@ func TestERViewThreeBoxes(t *testing.T) {
 	}
 }
 
+func TestERCanvasBoxes(t *testing.T) {
+	tables := []erTable{
+		{name: "customers", cols: []dbpkg.Column{{Name: "id", Type: "integer", Extra: "PK(1)"}, {Name: "name", Type: "text"}}, pk: map[string]bool{"id": true}},
+		{name: "orders", cols: []dbpkg.Column{{Name: "id", Type: "integer", Extra: "PK(1)"}, {Name: "customer_id", Type: "integer"}}, pk: map[string]bool{"id": true}, fk: map[string]bool{"customer_id": true}},
+	}
+	pos := erGridLayout(tables, 80, 20)
+	if len(pos) != 2 {
+		t.Fatalf("want 2 boxes, got %v", pos)
+	}
+	lines := erBoxLines(tables[1], 2, false)
+	joined := strings.Join(lines, "\n")
+	for _, want := range []string{"orders", "🔑", "➤", "123"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in:\n%s", want, joined)
+		}
+	}
+}
 func TestERSchemaStateDefaults(t *testing.T) {
 	m := browseModel(t)
 	if m.erSchema.loaded {
