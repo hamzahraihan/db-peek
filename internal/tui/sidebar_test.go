@@ -95,8 +95,8 @@ func TestSidebarClickPreviewsInDetail(t *testing.T) {
 	// orders sits at y=6 and customers at y=9.
 	u, cmd := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 6})
 	m = u.(Model)
-	if cmd == nil || m.table != "orders" || !m.focusDetail || m.detailSeq != 1 {
-		t.Fatalf("want orders previewed seq 1, got %q seq %d focus=%v", m.table, m.detailSeq, m.focusDetail)
+	if cmd == nil || m.table != "orders" || m.focusDetail || m.detailSeq != 1 {
+		t.Fatalf("want orders previewed seq 1 staying in sidebar, got %q seq %d focus=%v", m.table, m.detailSeq, m.focusDetail)
 	}
 	// Second click on another row previews it immediately: table updates
 	// and the seq bumps so the stale orders reply is ignored on arrival.

@@ -712,11 +712,12 @@ func (m Model) activateConn(name string) (Model, tea.Cmd) {
 
 // inspectTable previews one table in the detail pane; shared by sidebar
 // enter/click. The seq guard drops replies from superseded selections.
-// Previewing blurs the filter input (the text stays applied).
+// Previewing blurs the filter input (the text stays applied) but never
+// steals pane focus: sidebar previews stay in the sidebar (Tab jumps to
+// detail), detail-initiated previews keep detail focus.
 func (m Model) inspectTable(name string) (Model, tea.Cmd) {
 	m.filtering = false
 	m.filterInput.Blur()
-	m.focusDetail = true
 	m.table = name
 	m.tab = 0
 	m.loading = true
