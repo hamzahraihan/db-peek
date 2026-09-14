@@ -23,3 +23,13 @@ func TestERViewThreeBoxes(t *testing.T) {
 		}
 	}
 }
+
+func TestERSchemaStateDefaults(t *testing.T) {
+	m := browseModel(t)
+	if m.erSchema.loaded {
+		t.Fatal("erSchema should start unloaded")
+	}
+	if m.erPanX != 0 || m.erPanY != 0 {
+		t.Fatal("pan should start at 0,0")
+	}
+}
