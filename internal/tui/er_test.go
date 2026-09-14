@@ -95,6 +95,18 @@ func TestERPanClamp(t *testing.T) {
 	}
 }
 
+func TestEREmptyStates(t *testing.T) {
+	m := browseModel(t)
+	m.erSchema = erSchemaState{loaded: true}
+	if out := m.erView(60, 10); !strings.Contains(out, "(no tables)") {
+		t.Fatalf("want no-tables hint, got:\n%s", out)
+	}
+	m.erSchema = erSchemaState{loaded: true, tables: []erTable{{name: "t", cols: []dbpkg.Column{{Name: "id"}}}}}
+	if out := m.erView(60, 10); !strings.Contains(out, "(no foreign keys") {
+		t.Fatalf("want fk-less hint, got:\n%s", out)
+	}
+}
+
 func TestERSchemaStateDefaults(t *testing.T) {
 	m := browseModel(t)
 	if m.erSchema.loaded {

@@ -344,7 +344,10 @@ func (m Model) erCanvasView(innerW, innerH int) string {
 	canvas := erRenderCanvas(m.erSchema.tables, m.erSchema.links, innerW, innerH, m.erSel)
 	lines := erSliceViewport(canvas, m.erPanX, m.erPanY, innerW, innerH)
 	if len(m.erSchema.links) == 0 && len(m.erSchema.tables) > 0 {
-		note := dimStyle.Render("(no foreign keys — boxes only)")
+		if innerH < 1 {
+			innerH = 1
+		}
+		note := dimStyle.Render(fitText("(no foreign keys — boxes only)", innerW))
 		if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
 			lines[len(lines)-1] = note // reuse trailing padding: keep box rows
 		} else {

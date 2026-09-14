@@ -123,6 +123,15 @@ func (m *Model) sizeTables() {
 	m.colTable.Resize(w, h)
 	m.idxTable.Resize(w, h)
 	m.rowTable.Resize(w, h)
+	// ER viewport: upper pan clamp happens at render via
+	// erSliceViewport; clamp the lower bound here so a resize never
+	// leaves a negative pan offset.
+	if m.erPanX < 0 {
+		m.erPanX = 0
+	}
+	if m.erPanY < 0 {
+		m.erPanY = 0
+	}
 	if m.tab == 3 {
 		// Query tab: title+blank+tabs+blank+editor(8)+status(2); the
 		// results grid takes the remainder. (Task 6 adjusts tab 4.)
