@@ -61,7 +61,7 @@ func (m Model) browseView() string {
 		innerH = 1
 	}
 
-	side := strings.Split(m.explorer.Render(innerW, innerH-4), "\n")
+	side := strings.Split(m.explorer.Render(innerW, m.sidebarTreeH()), "\n")
 	// Insert a dim separator after the conn line so the first tree row
 	// lands at explorerFirstRow: y0=app header, y1=border, y2=title,
 	// y3=conn, y4=separator, y5=first tree row.

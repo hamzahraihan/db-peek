@@ -52,6 +52,7 @@ type Explorer struct {
 	Schemas  []SchemaNode
 	Cursor   int
 	Filter   string
+	Offset   int // first visible tree-row index into VisibleRows
 }
 
 func NewExplorer(connName string, schemas []string) Explorer {
@@ -169,6 +170,42 @@ func (e *Explorer) Toggle() {
 func (e *Explorer) SetFilter(f string) {
 	e.Filter = f
 	e.Cursor = 0
+	e.Offset = 0
+}
+
+// ensureVisible keeps Cursor inside [Offset, Offset+viewH) and Offset
+// inside its valid range. Call after every cursor/row mutation.
+func (e *Explorer) ensureVisible(viewH int) {
+	if viewH < 1 {
+		viewH = 1
+	}
+	n := len(e.VisibleRows())
+	if n == 0 {
+		e.Cursor, e.Offset = 0, 0
+		return
+	}
+	if e.Cursor < 0 {
+		e.Cursor = 0
+	}
+	if e.Cursor >= n {
+		e.Cursor = n - 1
+	}
+	maxOff := n - viewH
+	if maxOff < 0 {
+		maxOff = 0
+	}
+	if e.Offset < 0 {
+		e.Offset = 0
+	}
+	if e.Offset > maxOff {
+		e.Offset = maxOff
+	}
+	if e.Cursor < e.Offset {
+		e.Offset = e.Cursor
+	}
+	if e.Cursor >= e.Offset+viewH {
+		e.Offset = e.Cursor - viewH + 1
+	}
 }
 
 func humanizeCount(n int64) string {
@@ -211,6 +248,25 @@ func (e *Explorer) columnByName(schema, table, col string) (ColumnNode, bool) {
 
 func (e *Explorer) Render(sidebarW, height int) string {
 	rows := e.VisibleRows()
+	if height < 1 {
+		height = 1
+	}
+	start := e.Offset
+	maxStart := len(rows) - height
+	if maxStart < 0 {
+		maxStart = 0
+	}
+	if start < 0 {
+		start = 0
+	}
+	if start > maxStart {
+		start = maxStart
+	}
+	end := start + height
+	if end > len(rows) {
+		end = len(rows)
+	}
+	vis := rows[start:end]
 	var b strings.Builder
 	b.WriteString(explorerTitle.Render("explorer") + "\n")
 	connLeft := fitText("● "+e.ConnName, sidebarW-2)
@@ -221,7 +277,7 @@ func (e *Explorer) Render(sidebarW, height int) string {
 	connLine := explorerConn.Render(connLeft) + strings.Repeat(" ", gap) + dimStyle.Render("×")
 	b.WriteString(connLine + "\n")
 	var lines []string
-	for i, r := range rows {
+	for i, r := range vis {
 		var left, right string
 		switch r.Kind {
 		case RowSchema:
@@ -274,7 +330,7 @@ func (e *Explorer) Render(sidebarW, height int) string {
 		}
 		line := left + strings.Repeat(" ", gap) + right
 		line = fitText(line, sidebarW)
-		if i == e.Cursor {
+		if i+start == e.Cursor {
 			line = explorerSel.Render(line)
 		}
 		lines = append(lines, line)
