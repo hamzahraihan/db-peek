@@ -164,11 +164,18 @@ func (m Model) loadERSchema(schema string, tables []string) tea.Cmd {
 			}()
 		}
 		byName := map[string][]dbpkg.Column{}
+		failed := map[string]bool{}
 		var firstErr error
 		for range tables {
 			r := <-ch
-			if r.err != nil && firstErr == nil {
-				firstErr = r.err
+			if r.err != nil {
+				if firstErr == nil {
+					firstErr = r.err
+				}
+				// Drop the failed table so the update branch can
+				// tell it apart from a genuinely column-less one
+				// and still apply the successfully-loaded rest.
+				failed[r.t] = true
 				continue
 			}
 			byName[r.t] = r.cols
@@ -180,6 +187,9 @@ func (m Model) loadERSchema(schema string, tables []string) tea.Cmd {
 		_ = schema // scoping is explorer-side; db calls take plain table names
 		var out []erTable
 		for _, t := range tables {
+			if failed[t] {
+				continue
+			}
 			cols := byName[t]
 			pk := map[string]bool{}
 			fk := map[string]bool{}

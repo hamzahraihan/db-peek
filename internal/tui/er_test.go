@@ -4,6 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+
 	dbpkg "db-peek/internal/db"
 )
 
@@ -139,5 +142,103 @@ func TestERSchemaLoadedMsgApplies(t *testing.T) {
 	nm2, _ := got.Update(stale)
 	if len(nm2.(Model).erSchema.tables) != 2 {
 		t.Fatal("stale msg should be dropped")
+	}
+}
+
+func erBorderTables() []erTable {
+	return []erTable{
+		{name: "customers", cols: []dbpkg.Column{{Name: "id", Type: "integer", Extra: "PK(1)"}}, pk: map[string]bool{"id": true}},
+		{name: "orders", cols: []dbpkg.Column{{Name: "id", Type: "integer", Extra: "PK(1)"}}, pk: map[string]bool{"id": true}},
+	}
+}
+
+func TestERCanvasBorders(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+	joined := strings.Join(erRenderCanvas(erBorderTables(), nil, 80, 20, ""), "\n")
+	for _, want := range []string{"╭", "─", "╰", "│"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("production canvas must draw bordered boxes, missing %q in:\n%s", want, joined)
+		}
+	}
+}
+
+func TestERCanvasSelectedDistinct(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+	tables := erBorderTables()
+	sel := strings.Join(erRenderCanvas(tables, nil, 80, 20, "orders"), "\n")
+	unsel := strings.Join(erRenderCanvas(tables, nil, 80, 20, ""), "\n")
+	if sel == unsel {
+		t.Fatal("selected canvas must render distinctly from unselected")
+	}
+	if !strings.Contains(sel, "38;5;172m") {
+		t.Fatalf("selected box must use gold border:\n%s", sel)
+	}
+	if strings.Contains(unsel, "38;5;172m") {
+		t.Fatalf("unselected canvas must not use gold border:\n%s", unsel)
+	}
+	if !strings.Contains(unsel, "38;5;26m") {
+		t.Fatalf("unselected boxes must use blue border:\n%s", unsel)
+	}
+}
+
+func TestERCanvasHoverDistinct(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+	m := browseModel(t)
+	m.erSchema = erSchemaState{loaded: true, tables: erBorderTables(),
+		links: []dbpkg.ForeignKey{{FromTable: "orders", FromColumn: "id", ToTable: "customers", ToColumn: "id"}}}
+	m.erSel = "orders"
+	m.hoverER = "customers"
+	out := m.erCanvasView(80, 20)
+	if !strings.Contains(out, "38;5;172m") {
+		t.Fatalf("selected box must keep gold border:\n%s", out)
+	}
+	if !strings.Contains(out, "38;5;45m") {
+		t.Fatalf("hovered box must use hover border:\n%s", out)
+	}
+	if !strings.Contains(out, "╭") || !strings.Contains(out, "─") {
+		t.Fatalf("canvas view must show box borders:\n%s", out)
+	}
+}
+
+func TestERSchemaPartialFailureApplies(t *testing.T) {
+	m := browseModel(t)
+	m.table = "orders"
+	m.erSeq = 9
+	msg := erSchemaLoadedMsg{
+		tables: []erTable{{name: "orders"}, {name: "customers"}},
+		links:  []dbpkg.ForeignKey{{FromTable: "orders", FromColumn: "customer_id", ToTable: "customers", ToColumn: "id"}},
+		seq:    9,
+		err:    errTestCount,
+	}
+	nm, _ := m.Update(msg)
+	got := nm.(Model)
+	if !got.erSchema.loaded {
+		t.Fatal("partial failure must still apply schema with loaded:true")
+	}
+	if len(got.erSchema.tables) != 2 || len(got.erSchema.links) != 1 {
+		t.Fatalf("partial failure dropped usable data: %+v", got.erSchema)
+	}
+	if got.erSchema.err == "" {
+		t.Fatal("partial failure must record erSchema.err")
+	}
+	if got.err == "" {
+		t.Fatal("partial failure must record m.err footer")
+	}
+}
+
+func TestERSchemaTotalFailureFallsBack(t *testing.T) {
+	m := browseModel(t)
+	m.erSeq = 9
+	msg := erSchemaLoadedMsg{seq: 9, err: errTestCount}
+	nm, _ := m.Update(msg)
+	got := nm.(Model)
+	if got.erSchema.loaded {
+		t.Fatal("total failure (zero tables and zero links) must fall back to legacy")
+	}
+	if got.err == "" {
+		t.Fatal("total failure must still record m.err footer")
 	}
 }

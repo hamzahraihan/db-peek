@@ -224,8 +224,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil // superseded
 		}
 		if msg.err != nil {
+			if len(msg.tables) == 0 && len(msg.links) == 0 {
+				// Total failure: stay on the legacy single-table
+				// view, error on the footer.
+				m.err = msg.err.Error()
+				m.erSchema.err = msg.err.Error()
+				return m, nil
+			}
+			// Partial failure (design §5): keep the usable boxes
+			// + links with loaded:true and record the error in
+			// erSchema.err, surfaced via the m.err footer line.
+			m.erSchema = erSchemaState{tables: msg.tables, links: msg.links, loaded: true, err: msg.err.Error()}
+			m.erSel = m.table
+			m.erPanX, m.erPanY = 0, 0
 			m.err = msg.err.Error()
-			m.erSchema.err = msg.err.Error()
 			return m, nil
 		}
 		m.erSchema = erSchemaState{tables: msg.tables, links: msg.links, loaded: true}
