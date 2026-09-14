@@ -78,3 +78,29 @@ func TestSidebarNarrowRenderHasNoBrokenEscapes(t *testing.T) {
 		}
 	}
 }
+
+func TestSidebarScrollbarOverlay(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+	e := bigExplorer() // 31 rows
+	out := e.Render(32, 10)
+	lines := strings.Split(out, "\n")
+	if !strings.Contains(lines[2], "█") {
+		t.Fatalf("top of overflow must show thumb on first tree line:\n%s", out)
+	}
+	n := 0
+	for _, ln := range lines {
+		if strings.Contains(ln, "█") {
+			n++
+		}
+	}
+	if n != 3 { // 10*10/31 = 3
+		t.Fatalf("want thumb height 3, got %d:\n%s", n, out)
+	}
+	small := NewExplorer("t", []string{"s"})
+	small.Schemas[0].Expanded = true
+	small.Schemas[0].Tables = []TableNode{{Schema: "s", Name: "only", CountOK: true}}
+	if out := small.Render(32, 10); strings.Contains(out, "█") || strings.Contains(out, "│") {
+		t.Fatalf("no scrollbar without overflow:\n%s", out)
+	}
+}

@@ -68,6 +68,8 @@ var (
 	explorerType  = lipgloss.NewStyle().Foreground(lipgloss.Color("#67E8F9"))
 	explorerCount = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	explorerConn  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
+	scrollTrackStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	scrollThumbStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
 )
 
 func paneBorder(focused bool) lipgloss.Style {

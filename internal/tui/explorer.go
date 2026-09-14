@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type RowKind int
@@ -268,6 +269,20 @@ func explorerLine(left, right string, styleRight func(string) string, w int) str
 	return left + strings.Repeat(" ", gap) + styleRight(right)
 }
 
+// setLastCell overlays ch on the final cell of an ANSI-styled line of
+// width w, padding short lines with spaces first.
+func setLastCell(line, ch string, w int) string {
+	if w < 1 {
+		return line
+	}
+	if vw := lipgloss.Width(line); vw < w-1 {
+		line += strings.Repeat(" ", w-1-vw)
+	} else if vw >= w {
+		line = ansi.Truncate(line, w-1, "")
+	}
+	return line + ch
+}
+
 func (e *Explorer) Render(sidebarW, height int) string {
 	rows := e.VisibleRows()
 	if height < 1 {
@@ -356,6 +371,26 @@ func (e *Explorer) Render(sidebarW, height int) string {
 	}
 	if height > 0 && len(lines) > height {
 		lines = lines[:height]
+	}
+	if len(rows) > height {
+		thumbH := height * height / len(rows)
+		if thumbH < 1 {
+			thumbH = 1
+		}
+		thumbStart := 0
+		if span := len(rows) - height; span > 0 {
+			thumbStart = start * (height - thumbH) / span
+		}
+		for i := range lines {
+			if i >= height {
+				break
+			}
+			ch, st := "│", scrollTrackStyle
+			if i >= thumbStart && i < thumbStart+thumbH {
+				ch, st = "█", scrollThumbStyle
+			}
+			lines[i] = setLastCell(lines[i], st.Render(ch), sidebarW)
+		}
 	}
 	b.WriteString(strings.Join(lines, "\n"))
 	return b.String()
