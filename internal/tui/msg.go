@@ -12,12 +12,14 @@ type (
 		sample  *dbpkg.Sample
 		count   int64
 		seq     int // detailSeq at request time; stale replies are dropped
+		conn    int // connSeq at request time; other-connection replies are dropped
 		err     error
 	}
 	rowsPageMsg struct {
 		sample *dbpkg.Sample
 		page   int
 		seq    int
+		conn   int
 		err    error
 	}
 	connectMsg struct {
@@ -28,18 +30,21 @@ type (
 	schemasLoadedMsg struct {
 		schemas []string
 		tables  map[string][]dbpkg.TableRef
+		conn    int
 		err     error
 	}
 	tableCountMsg struct {
 		schema string
 		table  string
 		count  int64
+		conn   int
 		err    error
 	}
 	columnsLoadedMsg struct {
 		schema  string
 		table   string
 		columns []dbpkg.Column
+		conn    int
 		err     error
 	}
 	queryDoneMsg struct {
@@ -47,18 +52,21 @@ type (
 		sample *dbpkg.Sample
 		ms     int64
 		seq    int
+		conn   int
 		err    error
 	}
 	erLoadedMsg struct {
 		table string
 		links []dbpkg.ForeignKey
 		seq   int
+		conn  int
 		err   error
 	}
 	erSchemaLoadedMsg struct {
 		tables []erTable
 		links  []dbpkg.ForeignKey
 		seq    int
+		conn   int
 		err    error
 	}
 )
