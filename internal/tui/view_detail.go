@@ -93,7 +93,15 @@ func (m Model) detailView() string {
 	if m.err != "" {
 		b.WriteString(errStyle.Render(m.err) + "\n")
 	}
-	b.WriteString(dimStyle.Render(fitText("hover highlights • click tabs • wheel scroll • 1-5 tabs • r reload", m.paneW())))
+	foot := "hover highlights • click tabs • wheel scroll • 1-5 tabs • r reload"
+	if m.tab == 4 {
+		if m.erIsFocused() {
+			foot = "f all tables • n/p select • enter recenter • wasd/arrows pan • r reload"
+		} else {
+			foot = "f focused view • n/p select • enter recenter • wasd/arrows pan • r reload"
+		}
+	}
+	b.WriteString(dimStyle.Render(fitText(foot, m.paneW())))
 	return b.String()
 }
 

@@ -283,22 +283,36 @@ func setLastCell(line, ch string, w int) string {
 	return line + ch
 }
 
+// visibleStart is the single source of truth for the first visible
+// tree-row index: Offset clamped to its valid range for viewH. Render
+// stays pure (never mutates Offset), so mouse hit-testing must derive
+// its index from here too — otherwise a stale Offset (rows shrank while
+// scrolled, e.g. collapsing a schema) shows one window while clicks map
+// into another.
+func (e *Explorer) visibleStart(viewH int) int {
+	if viewH < 1 {
+		viewH = 1
+	}
+	maxStart := len(e.VisibleRows()) - viewH
+	if maxStart < 0 {
+		maxStart = 0
+	}
+	s := e.Offset
+	if s < 0 {
+		s = 0
+	}
+	if s > maxStart {
+		s = maxStart
+	}
+	return s
+}
+
 func (e *Explorer) Render(sidebarW, height int) string {
 	rows := e.VisibleRows()
 	if height < 1 {
 		height = 1
 	}
-	start := e.Offset
-	maxStart := len(rows) - height
-	if maxStart < 0 {
-		maxStart = 0
-	}
-	if start < 0 {
-		start = 0
-	}
-	if start > maxStart {
-		start = maxStart
-	}
+	start := e.visibleStart(height)
 	end := start + height
 	if end > len(rows) {
 		end = len(rows)

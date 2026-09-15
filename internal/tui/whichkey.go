@@ -22,6 +22,9 @@ type KeyBinding struct {
 var keyRegistry = []KeyBinding{
 	{"up/k", "move up", "Sidebar,Detail,Query-results,ER"},
 	{"down/j", "move down", "Sidebar,Detail,Query-results,ER"},
+	{"f", "focused/all tables", "ER"},
+	{"n/p", "select box", "ER"},
+	{"enter", "recenter diagram", "ER"},
 	{"left/right", "collapse/expand", "Sidebar"},
 	{"enter", "preview table", "Sidebar"},
 	{"/", "filter tables (enter keeps, esc clears)", "Sidebar"},

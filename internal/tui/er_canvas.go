@@ -179,6 +179,10 @@ func erRenderCanvas(tables []erTable, links []dbpkg.ForeignKey, innerW, innerH i
 	return erRenderCanvasHover(tables, links, innerW, innerH, sel, "")
 }
 
+// erBoxFn renders one box's display lines; matches erBoxLinesEx and
+// erFocusBoxLinesEx so focused and full modes share the canvas composer.
+type erBoxFn func(t erTable, total int, selected, hovered bool) []string
+
 // erRenderCanvasHover is erRenderCanvas plus a hover highlight: the
 // selected box gets the gold border, the hovered box the cyan border.
 // Overlay composes each row from the ANSI-free connector base plus whole
@@ -190,6 +194,17 @@ func erRenderCanvasHover(tables []erTable, links []dbpkg.ForeignKey, innerW, inn
 		return []string{"(no tables)"}
 	}
 	pos := erGridLayout(tables, innerW, innerH)
+	return erRenderWithPos(tables, links, pos, erBoxLinesEx, sel, hover)
+}
+
+// erRenderWithPos draws connectors first then boxes over them for an
+// explicit box layout; returns all canvas rows (unclipped). Connectors
+// are orthogonal Manhattan lines with an arrowhead at the target edge
+// (▶/◀) so 1-hop focused diagrams read like `A ──▶ B`.
+func erRenderWithPos(tables []erTable, links []dbpkg.ForeignKey, pos map[string]erRect, boxFn erBoxFn, sel, hover string) []string {
+	if len(tables) == 0 {
+		return []string{"(no tables)"}
+	}
 	cw, chh := 0, 0
 	for _, r := range pos {
 		if r.x+r.w > cw {
@@ -235,6 +250,14 @@ func erRenderCanvasHover(tables []erTable, links []dbpkg.ForeignKey, innerW, inn
 			for x := x1; x != x2; x += step {
 				set(x, y1, '┄')
 			}
+			// Arrowhead just before the target box edge.
+			if x2-step >= 0 {
+				if step > 0 {
+					set(x2-step, y1, '▶')
+				} else {
+					set(x2-step, y1, '◀')
+				}
+			}
 			continue
 		}
 		mid := (x1 + x2) / 2
@@ -265,6 +288,13 @@ func erRenderCanvasHover(tables []erTable, links []dbpkg.ForeignKey, innerW, inn
 		for x := mid; x != x2; x += step {
 			set(x, y2, '┄')
 		}
+		if x2-step >= 0 {
+			if step > 0 {
+				set(x2-step, y2, '▶')
+			} else {
+				set(x2-step, y2, '◀')
+			}
+		}
 	}
 	base := make([]string, len(grid))
 	for i, r := range grid {
@@ -281,8 +311,11 @@ func erRenderCanvasHover(tables []erTable, links []dbpkg.ForeignKey, innerW, inn
 	}
 	segsByRow := map[int][]seg{}
 	for _, t := range tables {
-		r := pos[t.name]
-		bl := erBoxLinesEx(byName[t.name], len(tables), t.name == sel, t.name == hover)
+		r, ok := pos[t.name]
+		if !ok {
+			continue
+		}
+		bl := boxFn(byName[t.name], len(tables), t.name == sel, t.name == hover)
 		for dy, ln := range bl {
 			segsByRow[r.y+dy] = append(segsByRow[r.y+dy], seg{r.x, ln})
 		}

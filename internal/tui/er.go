@@ -156,11 +156,14 @@ func (m Model) erClampOff(n int) int {
 	return off
 }
 
-// erView renders the diagram clipped to innerW columns and innerH rows
-// with vertical scroll via erOffset (clamped here so keys need no bounds
-// checks).
+// erView renders the diagram clipped to innerW columns and innerH rows.
+// Loaded schemas show the focused 1-hop view by default (f toggles the
+// full-schema grid); unloaded schemas fall back to the legacy text view.
 func (m Model) erView(innerW, innerH int) string {
 	if m.erSchema.loaded {
+		if m.erIsFocused() {
+			return m.erFocusedCanvasView(innerW, innerH)
+		}
 		return m.erCanvasView(innerW, innerH)
 	}
 	return m.erLegacyView(innerW, innerH)
@@ -180,9 +183,13 @@ func (m Model) erLegacyView(innerW, innerH int) string {
 }
 
 // erHit maps viewport coords to the topmost box; connectors never hit.
+// Focused mode accounts for its `diagram · X` header row.
 func (m Model) erHit(x, y int) (string, bool) {
 	if !m.erSchema.loaded {
 		return m.erLegacyHit(x, y)
+	}
+	if m.erIsFocused() {
+		return m.erFocusedHit(x, y)
 	}
 	pos := erGridLayout(m.erSchema.tables, m.paneInnerW(), m.paneInnerH())
 	cx := m.erPanX + x

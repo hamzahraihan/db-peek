@@ -35,12 +35,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.db = msg.db
 		m.screen = screenBrowse
+		m.clearConnState()
 		m.focusDetail = false
 		m.err = ""
+		m.loading = true
 		m.explorer = NewExplorer(m.db.Display, nil)
 		return m, m.loadSchemas()
 
 	case detailLoadedMsg:
+		if msg.conn != m.connSeq {
+			return m, nil // superseded by a connection switch
+		}
 		if msg.seq != m.detailSeq {
 			return m, nil // superseded by a newer selection
 		}
@@ -61,6 +66,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case schemasLoadedMsg:
+		if msg.conn != m.connSeq {
+			return m, nil // superseded by a connection switch
+		}
 		m.loading = false
 		if msg.err != nil {
 			m.err = msg.err.Error()
@@ -93,6 +101,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tableCountMsg:
+		if msg.conn != m.connSeq {
+			return m, nil // superseded by a connection switch
+		}
 		for si := range m.explorer.Schemas {
 			if m.explorer.Schemas[si].Name != msg.schema {
 				continue
@@ -120,6 +131,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case columnsLoadedMsg:
+		if msg.conn != m.connSeq {
+			return m, nil // superseded by a connection switch
+		}
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			for si := range m.explorer.Schemas {
@@ -132,6 +146,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
+			m.explorer.ensureVisible(m.sidebarTreeH())
 			return m, nil
 		}
 		for si := range m.explorer.Schemas {
@@ -154,9 +169,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.explorer.Schemas[si].Tables[ti].Columns = cols
 			}
 		}
+		m.explorer.ensureVisible(m.sidebarTreeH())
 		return m, nil
 
 	case rowsPageMsg:
+		if msg.conn != m.connSeq {
+			return m, nil // superseded by a connection switch
+		}
 		if msg.seq != m.detailSeq {
 			return m, nil // superseded by a newer selection
 		}
@@ -173,6 +192,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case queryDoneMsg:
+		if msg.conn != m.connSeq {
+			return m, nil // superseded by a connection switch
+		}
 		if msg.seq != m.querySeq {
 			return m, nil // superseded by a newer run
 		}
@@ -201,6 +223,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case erLoadedMsg:
+		if msg.conn != m.connSeq {
+			return m, nil // superseded by a connection switch
+		}
 		if msg.seq != m.erSeq {
 			return m, nil // superseded by a newer tab enter
 		}
@@ -220,6 +245,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case erSchemaLoadedMsg:
+		if msg.conn != m.connSeq {
+			return m, nil // superseded by a connection switch
+		}
 		if msg.seq != m.erSeq {
 			return m, nil // superseded
 		}
@@ -235,13 +263,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// + links with loaded:true and record the error in
 			// erSchema.err, surfaced via the m.err footer line.
 			m.erSchema = erSchemaState{tables: msg.tables, links: msg.links, loaded: true, err: msg.err.Error()}
+			if m.erCenter == "" {
+				m.erCenter = m.table
+			}
 			m.erSel = m.table
+			if m.erSel == "" {
+				m.erSel = m.erCenter
+			}
 			m.erPanX, m.erPanY = 0, 0
 			m.err = msg.err.Error()
 			return m, nil
 		}
 		m.erSchema = erSchemaState{tables: msg.tables, links: msg.links, loaded: true}
+		if m.erCenter == "" {
+			m.erCenter = m.table
+		}
 		m.erSel = m.table
+		if m.erSel == "" {
+			m.erSel = m.erCenter
+		}
 		m.erPanX, m.erPanY = 0, 0
 		m.err = ""
 		return m, nil
@@ -342,19 +382,54 @@ func (m Model) helpToggleAllowed() bool {
 	return true
 }
 
-// disconnect closes the database and returns to the picker.
+// clearConnState drops every piece of per-connection UI state so the
+// next connection never shows the previous database's tables, counts,
+// columns, query results or ER diagram. Seq counters bump alongside so
+// in-flight replies carrying the old detail/er/query seq are dropped
+// even before their conn generation is checked.
+func (m *Model) clearConnState() {
+	m.table = ""
+	m.cols = nil
+	m.indexes = nil
+	m.sample = nil
+	m.count = -1
+	m.page = 0
+	m.detailSeq++
+	m.querySeq++
+	m.erSeq++
+	m.explorer = NewExplorer("", nil)
+	m.erSchema = erSchemaState{}
+	m.erCache = nil
+	m.erLinks = nil
+	m.erOffset = 0
+	m.erSel = ""
+	m.erCenter = ""
+	m.erPanX, m.erPanY = 0, 0
+	m.hoverER = ""
+	m.querySample = nil
+	m.queryMs = 0
+	m.queryFocus = 0
+	m.tab = 0
+	m.hoverTab = -1
+	m.status = ""
+	m.err = ""
+	m.filtering = false
+	m.filterInput.Blur()
+	m.filterInput.SetValue("")
+}
+
+// disconnect closes the database, drops its UI state, and returns to
+// the picker. The conn generation bumps so late replies from the old
+// connection are ignored.
 func (m *Model) disconnect() {
 	if m.db != nil {
 		_ = m.db.Close()
 		m.db = nil
 	}
+	m.connSeq++
+	m.clearConnState()
 	m.screen = screenConns
 	m.focusDetail = false
-	m.err = ""
-	m.filtering = false
-	m.filterInput.Blur()
-	m.filterInput.SetValue("")
-	m.explorer.SetFilter("")
 	m.refreshConns()
 }
 
@@ -660,9 +735,10 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// erKeys handles keys on the er tab (tab 4): tab switching like every
-// other tab, up/k/down/j vertical scroll through the diagram, and r to
-// reload the links bypassing the cache.
+// erKeys handles keys on the er tab (tab 4): focused 1-hop diagram by
+// default (f toggles the full schema), pan via arrows/WASD, n/p to cycle
+// visible boxes, enter to recenter on the selection (stays on ER), r to
+// reload the schema.
 func (m Model) erKeys(_ tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc", "backspace":
@@ -717,14 +793,27 @@ func (m Model) erKeys(_ tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		m.erPanY += 10
 		return m, nil
 	case "n":
-		m.erSel = erNextBox(m.erSchema.tables, m.erSel, 1)
+		m.erSel = erNextBox(m.erVisibleTables(), m.erSel, 1)
 		return m, nil
 	case "p":
-		m.erSel = erNextBox(m.erSchema.tables, m.erSel, -1)
+		m.erSel = erNextBox(m.erVisibleTables(), m.erSel, -1)
+		return m, nil
+	case "f":
+		m.erFocus = !m.erFocus
+		if m.erFocus && m.erCenter == "" {
+			m.erCenter = m.erSel
+			if m.erCenter == "" {
+				m.erCenter = m.table
+			}
+		}
+		if m.erSel == "" {
+			m.erSel = m.erCenter
+		}
+		m.erPanX, m.erPanY = 0, 0
 		return m, nil
 	case "enter":
 		if m.erSel != "" {
-			return m.inspectTable(m.erSel)
+			return m.recenterER(m.erSel)
 		}
 		return m, nil
 	case "r":
@@ -772,12 +861,45 @@ func (m *Model) activeGrid() *dataTable {
 
 // activateConn connects to a saved profile; shared by enter-key and double-click.
 func (m Model) activateConn(name string) (Model, tea.Cmd) {
+	if m.db != nil {
+		_ = m.db.Close()
+		m.db = nil
+	}
+	m.connSeq++
+	if p, ok := m.store.Get(name); ok {
+		m.connStr = p.Conn
+	}
 	m.delArm = ""
 	m.screen = screenBrowse
 	m.focusDetail = false
 	m.loading = true
 	m.err = ""
 	return m, m.openSaved(name)
+}
+
+// recenterER moves the focused diagram to a new center table and stays
+// on the ER tab (enter/double-click). Detail columns reload in the
+// background so the next tab switch is fresh; the seq guard drops stale
+// replies.
+func (m Model) recenterER(name string) (Model, tea.Cmd) {
+	if name == "" {
+		return m, nil
+	}
+	m.erFocus = true
+	m.erCenter = name
+	m.erSel = name
+	m.hoverER = ""
+	m.erPanX, m.erPanY = 0, 0
+	m.table = name
+	m.hoverTab = -1
+	m.err = ""
+	if m.db == nil {
+		return m, nil
+	}
+	m.loading = true
+	m.page = 0
+	m.detailSeq++
+	return m, m.loadDetail(name)
 }
 
 // inspectTable previews one table in the detail pane; shared by sidebar

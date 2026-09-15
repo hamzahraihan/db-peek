@@ -31,6 +31,12 @@ type Model struct {
 	store   *saved.Store
 	connStr string
 	screen  screen
+	// connSeq is the connection generation: bumped every time we start
+	// switching connections (activate/disconnect). Async DB replies carry
+	// the generation they were issued under and are dropped when it no
+	// longer matches, so a slow Supabase response can never paint stale
+	// rows, counts, columns or ER boxes into the new session.
+	connSeq int
 
 	conns  list.Model
 	delArm string // profile name armed for delete confirmation
@@ -80,6 +86,8 @@ type Model struct {
 	erPanY   int
 	erSel    string
 	hoverER  string
+	erFocus  bool   // true = 1-hop focused view around erCenter (default); false = full schema
+	erCenter string // diagram center table for focused view
 
 	showHelp bool // which-key overlay (Task 7): modal, toggled by ?
 
@@ -162,6 +170,7 @@ func New(connStr string, store *saved.Store) Model {
 		nameInput: nameInput, connInput: connInput, filterInput: filterInput,
 		connsItemH: cdelegate.Height() + cdelegate.Spacing(),
 		editor:     NewEditor(),
+		erFocus:    true,
 	}
 	m.refreshConns()
 	if m.connStr == "" {
@@ -279,11 +288,17 @@ func (m Model) detailTabLabels() []string {
 // setTab switches detail tabs and refits the table to the new chrome
 // (pager line, DDL echo) so the layout always fills the terminal.
 // Entering the ER tab bumps erSeq and kicks off an ER load (cached
-// when the table was already visited).
+// when the table was already visited). The diagram defaults to the
+// focused 1-hop view centered on the current table.
 func (m *Model) setTab(i int) tea.Cmd {
 	m.tab = i
 	if i == 4 {
 		m.erSeq++
+		if m.erCenter == "" || m.erCenter != m.table {
+			m.erCenter = m.table
+			m.erSel = m.table
+			m.erPanX, m.erPanY = 0, 0
+		}
 		m.sizeTables()
 		if m.erSchema.loaded {
 			return nil

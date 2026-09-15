@@ -47,26 +47,27 @@ func (m Model) loadDetail(table string) tea.Cmd {
 	db := m.db
 	size := m.pageSize
 	seq := m.detailSeq
+	conn := m.connSeq
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		cols, err := db.Columns(ctx, table)
 		if err != nil {
-			return detailLoadedMsg{table: table, err: err, seq: seq}
+			return detailLoadedMsg{table: table, err: err, seq: seq, conn: conn}
 		}
 		idx, err := db.Indexes(ctx, table)
 		if err != nil {
-			return detailLoadedMsg{table: table, err: err, seq: seq}
+			return detailLoadedMsg{table: table, err: err, seq: seq, conn: conn}
 		}
 		sample, err := db.PageRows(ctx, table, size, 0)
 		if err != nil {
-			return detailLoadedMsg{table: table, err: err, seq: seq}
+			return detailLoadedMsg{table: table, err: err, seq: seq, conn: conn}
 		}
 		count, err := db.Count(ctx, table)
 		if err != nil {
 			count = -1 // sample still useful; count failure is non-fatal
 		}
-		return detailLoadedMsg{table: table, cols: cols, indexes: idx, sample: sample, count: count, seq: seq}
+		return detailLoadedMsg{table: table, cols: cols, indexes: idx, sample: sample, count: count, seq: seq, conn: conn}
 	}
 }
 
@@ -74,69 +75,74 @@ func (m Model) loadDetail(table string) tea.Cmd {
 func (m Model) loadRowsPage() tea.Cmd {
 	db, table, size, page := m.db, m.table, m.pageSize, m.page
 	seq := m.detailSeq
+	conn := m.connSeq
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		sample, err := db.PageRows(ctx, table, size, page*size)
 		if err != nil {
-			return rowsPageMsg{err: err, seq: seq}
+			return rowsPageMsg{err: err, seq: seq, conn: conn}
 		}
-		return rowsPageMsg{sample: sample, page: page, seq: seq}
+		return rowsPageMsg{sample: sample, page: page, seq: seq, conn: conn}
 	}
 }
 
 func (m Model) loadSchemas() tea.Cmd {
 	db := m.db
+	conn := m.connSeq
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		schemas, err := db.ListSchemas(ctx)
 		if err != nil {
-			return schemasLoadedMsg{err: err}
+			return schemasLoadedMsg{err: err, conn: conn}
 		}
 		tables := map[string][]dbpkg.TableRef{}
 		for _, s := range schemas {
 			refs, err := db.ListTablesInSchema(ctx, s)
 			if err != nil {
-				return schemasLoadedMsg{err: err}
+				return schemasLoadedMsg{err: err, conn: conn}
 			}
 			tables[s] = refs
 		}
-		return schemasLoadedMsg{schemas: schemas, tables: tables}
+		return schemasLoadedMsg{schemas: schemas, tables: tables, conn: conn}
 	}
 }
 
 func (m Model) loadOneCount(schema, table string) tea.Cmd {
 	db := m.db
+	conn := m.connSeq
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		n, err := db.ApproxCount(ctx, schema, table)
-		return tableCountMsg{schema: schema, table: table, count: n, err: err}
+		return tableCountMsg{schema: schema, table: table, count: n, err: err, conn: conn}
 	}
 }
 
 func (m Model) runQuery() tea.Cmd {
 	db, sql, seq := m.db, m.editor.Text(), m.querySeq
+	conn := m.connSeq
 	return func() tea.Msg {
 		start := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		s, err := db.Query(ctx, sql)
-		return queryDoneMsg{sql: sql, sample: s, ms: time.Since(start).Milliseconds(), seq: seq, err: err}
+		return queryDoneMsg{sql: sql, sample: s, ms: time.Since(start).Milliseconds(), seq: seq, err: err, conn: conn}
 	}
 }
 
 func (m Model) loadER(table string) tea.Cmd {
 	db, seq := m.db, m.erSeq
+	conn := m.connSeq
 	if links, ok := m.erCache[table]; ok {
-		return func() tea.Msg { return erLoadedMsg{table: table, links: links, seq: seq} }
+		return func() tea.Msg { return erLoadedMsg{table: table, links: links, seq: seq, conn: conn} }
 	}
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		links, err := db.ForeignKeys(ctx, table)
-		return erLoadedMsg{table: table, links: links, seq: seq, err: err}
+		return erLoadedMsg{table: table, links: links, seq: seq, err: err, conn: conn}
 	}
 }
 
@@ -144,6 +150,7 @@ func (m Model) loadER(table string) tea.Cmd {
 // concurrency 4, 15s timeout). Tables come from the caller (current schema).
 func (m Model) loadERSchema(schema string, tables []string) tea.Cmd {
 	db, seq := m.db, m.erSeq
+	conn := m.connSeq
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
@@ -205,7 +212,7 @@ func (m Model) loadERSchema(schema string, tables []string) tea.Cmd {
 			}
 			out = append(out, erTable{name: t, cols: cols, pk: pk, fk: fk})
 		}
-		return erSchemaLoadedMsg{tables: out, links: links, seq: seq, err: firstErr}
+		return erSchemaLoadedMsg{tables: out, links: links, seq: seq, err: firstErr, conn: conn}
 	}
 }
 // loadColumns resolves table names within the connection's default
@@ -215,10 +222,11 @@ func (m Model) loadERSchema(schema string, tables []string) tea.Cmd {
 // do not change the db package.
 func (m Model) loadColumns(schema, table string) tea.Cmd {
 	db := m.db
+	conn := m.connSeq
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		cols, err := db.Columns(ctx, table)
-		return columnsLoadedMsg{schema: schema, table: table, columns: cols, err: err}
+		return columnsLoadedMsg{schema: schema, table: table, columns: cols, err: err, conn: conn}
 	}
 }
