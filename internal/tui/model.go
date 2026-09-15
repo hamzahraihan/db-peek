@@ -75,6 +75,12 @@ type Model struct {
 	erOffset int
 	erCache  map[string][]dbpkg.ForeignKey
 
+	erSchema erSchemaState
+	erPanX   int
+	erPanY   int
+	erSel    string
+	hoverER  string
+
 	showHelp bool // which-key overlay (Task 7): modal, toggled by ?
 
 	// Mouse: rows per item in each picker (from the item delegates), plus
@@ -86,6 +92,22 @@ type Model struct {
 	lastHoverIdx   int
 	lastHoverWhere screen
 	hoverTab       int // tab under the cursor, -1 when none
+}
+
+// erTable is one box on the ER canvas.
+type erTable struct {
+	name string
+	cols []dbpkg.Column
+	pk   map[string]bool
+	fk   map[string]bool
+}
+
+// erSchemaState is the full-schema ER cache (one load per session).
+type erSchemaState struct {
+	tables []erTable
+	links  []dbpkg.ForeignKey
+	loaded bool
+	err    string
 }
 
 func New(connStr string, store *saved.Store) Model {
@@ -263,7 +285,19 @@ func (m *Model) setTab(i int) tea.Cmd {
 	if i == 4 {
 		m.erSeq++
 		m.sizeTables()
-		return m.loadER(m.table)
+		if m.erSchema.loaded {
+			return nil
+		}
+		var names []string
+		for _, s := range m.explorer.Schemas {
+			for _, tb := range s.Tables {
+				names = append(names, tb.Name)
+			}
+		}
+		if len(names) == 0 && m.table != "" {
+			names = []string{m.table}
+		}
+		return m.loadERSchema("", names)
 	}
 	m.sizeTables()
 	return nil

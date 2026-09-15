@@ -160,6 +160,13 @@ func (m Model) erClampOff(n int) int {
 // with vertical scroll via erOffset (clamped here so keys need no bounds
 // checks).
 func (m Model) erView(innerW, innerH int) string {
+	if m.erSchema.loaded {
+		return m.erCanvasView(innerW, innerH)
+	}
+	return m.erLegacyView(innerW, innerH)
+}
+
+func (m Model) erLegacyView(innerW, innerH int) string {
 	lines, _ := m.erLayout(innerW)
 	if innerH < 1 {
 		innerH = 1
@@ -172,10 +179,26 @@ func (m Model) erView(innerW, innerH int) string {
 	return strings.Join(lines[off:end], "\n")
 }
 
-// erHit maps border-relative content coords (x = content column,
+// erHit maps viewport coords to the topmost box; connectors never hit.
+func (m Model) erHit(x, y int) (string, bool) {
+	if !m.erSchema.loaded {
+		return m.erLegacyHit(x, y)
+	}
+	pos := erGridLayout(m.erSchema.tables, m.paneInnerW(), m.paneInnerH())
+	cx := m.erPanX + x
+	cy := (y - detailTableTop) + m.erPanY
+	for name, r := range pos {
+		if cx >= r.x && cx < r.x+r.w && cy >= r.y && cy < r.y+r.h {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+// erLegacyHit maps border-relative content coords (x = content column,
 // y = terminal row) to a neighbor table name. The center box is
 // excluded: only connector-row neighbor spans hit.
-func (m Model) erHit(x, y int) (string, bool) {
+func (m Model) erLegacyHit(x, y int) (string, bool) {
 	lines, spans := m.erLayout(m.paneInnerW())
 	rel := m.erClampOff(len(lines)) + (y - detailTableTop)
 	if rel < 0 {

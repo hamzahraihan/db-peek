@@ -55,4 +55,10 @@ type (
 		seq   int
 		err   error
 	}
+	erSchemaLoadedMsg struct {
+		tables []erTable
+		links  []dbpkg.ForeignKey
+		seq    int
+		err    error
+	}
 )

@@ -123,3 +123,28 @@ func (d *DB) sqliteOutgoing(ctx context.Context, table string) ([]ForeignKey, er
 	}
 	return out, nil
 }
+
+// AllForeignKeys aggregates ForeignKeys across tables and dedupes pairs.
+// Empty input returns nil. Order: first-seen table order, then FK order.
+func (d *DB) AllForeignKeys(ctx context.Context, tables []string) ([]ForeignKey, error) {
+	if len(tables) == 0 {
+		return nil, nil
+	}
+	seen := map[string]bool{}
+	var out []ForeignKey
+	for _, t := range tables {
+		fks, err := d.ForeignKeys(ctx, t)
+		if err != nil {
+			return nil, err
+		}
+		for _, fk := range fks {
+			k := fk.FromTable + "|" + fk.FromColumn + "|" + fk.ToTable + "|" + fk.ToColumn
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
+			out = append(out, fk)
+		}
+	}
+	return out, nil
+}

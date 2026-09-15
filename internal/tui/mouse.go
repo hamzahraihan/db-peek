@@ -166,12 +166,9 @@ func (m Model) wheel(n int) (tea.Model, tea.Cmd) {
 					m.queryTable.MoveDown(steps)
 				}
 		case 4:
-			if up {
-				if m.erOffset > 0 {
-					m.erOffset--
-				}
-			} else {
-				m.erOffset++
+			m.erPanY += n
+			if m.erPanY < 0 {
+				m.erPanY = 0
 			}
 			default:
 				if up {
@@ -306,7 +303,7 @@ func (m Model) hover(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			if msg.Y == m.tabStripRow() {
 				return m.hoverTabs(msg.X - m.paneX() - 1), nil
 			}
-			return m.hoverTable(msg.Y)
+			return m.hoverTable(msg.X-m.paneX()-1, msg.Y)
 		}
 		return m, nil
 	default:
@@ -314,7 +311,7 @@ func (m Model) hover(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m.hoverTabs(msg.X - m.paneX() - 1), nil
 		}
 		m.hoverTab = -1
-		return m.hoverTable(msg.Y)
+		return m.hoverTable(msg.X-m.paneX()-1, msg.Y)
 	}
 }
 
@@ -363,7 +360,7 @@ func (m Model) hoverList(y int, which screen) (tea.Model, tea.Cmd) {
 // only moves on explicit scroll actions, so unlike the old widget the
 // content cannot shift under a stationary mouse. Hover is separate from
 // selection: keyboard context (cursor, DDL echo) is untouched.
-func (m Model) hoverTable(y int) (tea.Model, tea.Cmd) {
+func (m Model) hoverTable(x, y int) (tea.Model, tea.Cmd) {
 	if m.tab == 3 {
 		if y >= detailTableTop && y < queryResultsTop()-1 {
 			m.queryTable.SetHover(-1)
@@ -379,7 +376,12 @@ func (m Model) hoverTable(y int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.tab == 4 {
-		return m, nil // ER tab: diagram scrolls via up/down keys, no row hover
+		if name, ok := m.erHit(x, y); ok {
+			m.hoverER = name
+		} else {
+			m.hoverER = ""
+		}
+		return m, nil
 	}
 	var t *dataTable
 	switch m.tab {
@@ -412,8 +414,14 @@ func (m Model) clickTable(x, y int) (tea.Model, tea.Cmd) {
 	}
 	if m.tab == 4 {
 		if name, ok := m.erHit(x, y); ok {
-			logMouse("  clickTable er y=%d -> inspect %s", y, name)
-			return m.inspectTable(name)
+			logMouse("  clickTable er y=%d -> select %s", y, name)
+			if m.erSel == name && time.Since(m.lastClickAt) < 500*time.Millisecond {
+				m.lastClickAt = time.Time{}
+				return m.inspectTable(name)
+			}
+			m.erSel = name
+			m.lastClickAt = time.Now()
+			return m, nil
 		}
 		return m, nil
 	}

@@ -59,3 +59,22 @@ func TestForeignKeysSQLiteError(t *testing.T) {
 		t.Fatal("expected error on closed DB, got nil")
 	}
 }
+
+func TestAllForeignKeysDedupe(t *testing.T) {
+	d := openFKMem(t)
+	defer d.SQL.Close()
+	out, err := d.AllForeignKeys(context.Background(), []string{"customers", "orders"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("want 1 deduped fk, got %v", out)
+	}
+	fk := out[0]
+	if fk.FromTable != "orders" || fk.ToTable != "customers" {
+		t.Fatalf("wrong fk %v", fk)
+	}
+	if out2, _ := d.AllForeignKeys(context.Background(), nil); len(out2) != 0 {
+		t.Fatalf("want empty for nil tables, got %v", out2)
+	}
+}

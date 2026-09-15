@@ -139,6 +139,75 @@ func (m Model) loadER(table string) tea.Cmd {
 		return erLoadedMsg{table: table, links: links, seq: seq, err: err}
 	}
 }
+
+// loadERSchema fetches columns for every table plus all FKs (bounded
+// concurrency 4, 15s timeout). Tables come from the caller (current schema).
+func (m Model) loadERSchema(schema string, tables []string) tea.Cmd {
+	db, seq := m.db, m.erSeq
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		type res struct {
+			t   string
+			cols []dbpkg.Column
+			err  error
+		}
+		ch := make(chan res, len(tables))
+		sem := make(chan struct{}, 4)
+		for _, t := range tables {
+			t := t
+			go func() {
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				cols, err := db.Columns(ctx, t)
+				ch <- res{t: t, cols: cols, err: err}
+			}()
+		}
+		byName := map[string][]dbpkg.Column{}
+		failed := map[string]bool{}
+		var firstErr error
+		for range tables {
+			r := <-ch
+			if r.err != nil {
+				if firstErr == nil {
+					firstErr = r.err
+				}
+				// Drop the failed table so the update branch can
+				// tell it apart from a genuinely column-less one
+				// and still apply the successfully-loaded rest.
+				failed[r.t] = true
+				continue
+			}
+			byName[r.t] = r.cols
+		}
+		links, err := db.AllForeignKeys(ctx, tables)
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+		_ = schema // scoping is explorer-side; db calls take plain table names
+		var out []erTable
+		for _, t := range tables {
+			if failed[t] {
+				continue
+			}
+			cols := byName[t]
+			pk := map[string]bool{}
+			fk := map[string]bool{}
+			for _, c := range cols {
+				if len(c.Extra) >= 2 && c.Extra[:2] == "PK" {
+					pk[c.Name] = true
+				}
+			}
+			for _, l := range links {
+				if l.FromTable == t {
+					fk[l.FromColumn] = true
+				}
+			}
+			out = append(out, erTable{name: t, cols: cols, pk: pk, fk: fk})
+		}
+		return erSchemaLoadedMsg{tables: out, links: links, seq: seq, err: firstErr}
+	}
+}
 // loadColumns resolves table names within the connection's default
 // schema/search_path (consistent with the ApproxCount parked ruling):
 // the schema arg scopes explorer state only; db.Columns takes a plain
