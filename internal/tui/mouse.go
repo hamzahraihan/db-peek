@@ -211,6 +211,9 @@ func (m Model) clickList(y int, which screen) (tea.Model, tea.Cmd) {
 // Clicks on sidebar chrome (title/conn/separator) are no-ops — disconnect
 // stays on c/esc keys.
 func (m Model) clickExplorer(x, y int) (tea.Model, tea.Cmd) {
+	// Map through the same clamped start Render uses, then repair a
+	// stale Offset so later events stay canonical.
+	m.explorer.Offset = m.explorer.visibleStart(m.sidebarTreeH())
 	idx := y - explorerFirstRow + m.explorer.Offset
 	r, ok := m.explorer.RowAt(idx)
 	if !ok {
@@ -222,10 +225,12 @@ func (m Model) clickExplorer(x, y int) (tea.Model, tea.Cmd) {
 	case RowSchema:
 		logMouse("  clickExplorer x=%d y=%d -> toggle schema %s", x, y, r.Schema)
 		m.explorer.Toggle()
+		m.explorer.ensureVisible(m.sidebarTreeH())
 		return m, nil
 	case RowTable:
 		logMouse("  clickExplorer x=%d y=%d -> preview table %s", x, y, r.Table)
 		m.explorer.Toggle()
+		m.explorer.ensureVisible(m.sidebarTreeH())
 		colCmd := m.loadColumns(r.Schema, r.Table)
 		m2, inspectCmd := m.inspectTable(r.Table)
 		m = m2
@@ -336,7 +341,14 @@ func (m Model) tabAtX(x int) int {
 
 func (m Model) hoverList(y int, which screen) (tea.Model, tea.Cmd) {
 	if which == screenBrowse {
-		// Sidebar hover follows the explorer cursor; no preview.
+		// Sidebar hover follows the explorer cursor; no preview. Like
+		// clicks, it maps through the clamped render start so hover
+		// tracks the mouse when the row list shrank while scrolled.
+		// Rows above the first tree row are chrome (title/conn/separator).
+		if y < explorerFirstRow {
+			return m, nil
+		}
+		m.explorer.Offset = m.explorer.visibleStart(m.sidebarTreeH())
 		idx := y - explorerFirstRow + m.explorer.Offset
 		if _, ok := m.explorer.RowAt(idx); !ok {
 			return m, nil
@@ -417,7 +429,7 @@ func (m Model) clickTable(x, y int) (tea.Model, tea.Cmd) {
 			logMouse("  clickTable er y=%d -> select %s", y, name)
 			if m.erSel == name && time.Since(m.lastClickAt) < 500*time.Millisecond {
 				m.lastClickAt = time.Time{}
-				return m.inspectTable(name)
+				return m.recenterER(name)
 			}
 			m.erSel = name
 			m.lastClickAt = time.Now()
