@@ -24,6 +24,36 @@ type dataTable struct {
 	hover  int // hovered absolute row, -1 when none
 	width  int
 	height int // visible data rows, excluding the header
+	// Semantic styling: optional per-column roles plus a per-cell hook.
+	// All styling runs on plain text after fitText/padCell, so widths and
+	// mouse hit-testing (RowAt, dataHeaderH) are unchanged. Selection and
+	// hover always win; zebra (bg-only) composes with cell fg colors.
+	headerStyle    lipgloss.Style
+	dimHeaderStyle lipgloss.Style
+	colStyles      []lipgloss.Style
+	dimColStyles   []lipgloss.Style
+	// styleCell, when non-nil, returns the semantic style for one body cell.
+	// dim reports whether the pane is unfocused (use muted roles).
+	styleCell func(col int, val string, dim bool) (lipgloss.Style, bool)
+	hasHeader bool // true once SetHeaderStyles has run; else globals apply
+}
+
+// SetHeaderStyles overrides the header role for this table (e.g. field-name
+// headers on the Rows tab). Pass dim variant for unfocused rendering.
+func (t *dataTable) SetHeaderStyles(normal, dimmed lipgloss.Style) {
+	t.headerStyle, t.dimHeaderStyle, t.hasHeader = normal, dimmed, true
+}
+
+// SetColStyles assigns per-column body roles (field vs type vs meta).
+// Length may be shorter than the column count; missing entries are plain.
+func (t *dataTable) SetColStyles(normal, dimmed []lipgloss.Style) {
+	t.colStyles, t.dimColStyles = normal, dimmed
+}
+
+// SetCellHook installs per-cell semantic overrides (PK gold, unique green).
+// It runs after colStyles; returning false falls back to the column role.
+func (t *dataTable) SetCellHook(hook func(col int, val string, dim bool) (lipgloss.Style, bool)) {
+	t.styleCell = hook
 }
 
 // dataHeaderH is the rendered header height both here and in hit-testing:
@@ -156,12 +186,32 @@ func (t *dataTable) view(dim bool) string {
 		headerStyle, selectedStyle = dimDataHeaderStyle, dimDataSelectedStyle
 		hoverStyle = lipgloss.NewStyle()
 	}
+	if t.hasHeader {
+		if dim {
+			headerStyle = t.dimHeaderStyle
+		} else {
+			headerStyle = t.headerStyle
+		}
+	}
+	colStyles := t.colStyles
+	if dim {
+		colStyles = t.dimColStyles
+	}
 	var b strings.Builder
 	cells := make([]string, len(t.cols))
 	for i, c := range t.cols {
-		cells[i] = padCell(c, t.widths[i])
+		padded := padCell(c, t.widths[i])
+		if i < len(colStyles) {
+			cells[i] = colStyles[i].Render(padded)
+		} else {
+			cells[i] = padded
+		}
 	}
-	b.WriteString(headerStyle.Render(strings.Join(cells, "")) + "\n")
+	if len(colStyles) == 0 {
+		b.WriteString(headerStyle.Render(strings.Join(cells, "")) + "\n")
+	} else {
+		b.WriteString(strings.Join(cells, "") + "\n")
+	}
 	total := 0
 	for _, w := range t.widths {
 		total += w
@@ -173,18 +223,34 @@ func (t *dataTable) view(dim bool) string {
 	}
 	for i := t.offset; i < end; i++ {
 		cells = cells[:0]
+		selected := i == t.cursor && t.cursor >= 0
+		hovered := i == t.hover
+		plain := selected || hovered
 		for j := range t.cols {
 			v := ""
 			if j < len(t.rows[i]) {
 				v = t.rows[i][j]
 			}
-			cells = append(cells, padCell(v, t.widths[j]))
+			padded := padCell(v, t.widths[j])
+			if !plain {
+				if t.styleCell != nil {
+					if st, ok := t.styleCell(j, v, dim); ok {
+						padded = st.Render(padded)
+						cells = append(cells, padded)
+						continue
+					}
+				}
+				if j < len(colStyles) {
+					padded = colStyles[j].Render(padded)
+				}
+			}
+			cells = append(cells, padded)
 		}
 		line := strings.Join(cells, "")
 		switch {
-		case i == t.cursor && t.cursor >= 0:
+		case selected:
 			line = selectedStyle.Render(line)
-		case i == t.hover:
+		case hovered:
 			line = hoverStyle.Render(line)
 		case i%2 == 1:
 			if dim {
