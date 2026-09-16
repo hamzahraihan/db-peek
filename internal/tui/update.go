@@ -204,8 +204,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil // keep editor text + old results
 		}
 		m.querySample = msg.sample
+		m.queryAffected = msg.affected
 		m.queryMs = msg.ms
 		m.err = ""
+		if msg.affected >= 0 {
+			// Write path: no grid, the view shows rows-affected instead.
+			m.querySample = nil
+			m.queryTable.setData([]string{"rows"}, [][]string{{"(no rows)"}})
+			m.sizeTables()
+			return m, nil
+		}
 		var qcols []string
 		var qrows [][]string
 		if msg.sample != nil {
@@ -413,6 +421,7 @@ func (m *Model) clearConnState() {
 	m.erPanX, m.erPanY = 0, 0
 	m.hoverER = ""
 	m.querySample = nil
+	m.queryAffected = -1
 	m.queryMs = 0
 	m.queryFocus = 0
 	m.tab = 0
