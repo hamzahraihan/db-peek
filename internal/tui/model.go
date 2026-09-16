@@ -75,6 +75,12 @@ type Model struct {
 	queryMs     int64
 	querySeq    int
 	queryTable  dataTable
+	// SQL autocomplete popup (query tab, editor focused only).
+	showComplete   bool
+	completeIdx    int
+	completeItems  []completeItem
+	completeStart  int // rune offset where the current prefix starts
+	completePrefix string
 
 	erLinks  []dbpkg.ForeignKey
 	erSeq    int
