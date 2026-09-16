@@ -251,6 +251,12 @@ func (e *Explorer) columnByName(schema, table, col string) (ColumnNode, bool) {
 // exactly fit w cells, then applies styleRight. Truncation runs on
 // plain text only, so styled output is never sliced mid-escape.
 func explorerLine(left, right string, styleRight func(string) string, w int) string {
+	return explorerLineStyled(left, right, nil, styleRight, w)
+}
+
+// explorerLineStyled is explorerLine with an optional left style (field name
+// vs type). styleLeft may be nil for plain left.
+func explorerLineStyled(left, right string, styleLeft, styleRight func(string) string, w int) string {
 	if w < 4 {
 		w = 4
 	}
@@ -266,7 +272,13 @@ func explorerLine(left, right string, styleRight func(string) string, w int) str
 	if gap < 1 {
 		gap = 1
 	}
-	return left + strings.Repeat(" ", gap) + styleRight(right)
+	if styleLeft != nil {
+		left = styleLeft(left)
+	}
+	if styleRight != nil {
+		return left + strings.Repeat(" ", gap) + styleRight(right)
+	}
+	return left + strings.Repeat(" ", gap) + right
 }
 
 // setLastCell overlays ch on the final cell of an ANSI-styled line of
@@ -370,13 +382,17 @@ func (e *Explorer) Render(sidebarW, height int) string {
 		case RowColumn:
 			c, _ := e.columnByName(r.Schema, r.Table, r.Column)
 			icon := "◇"
-			if c.IsPK {
+			styleLeft := func(s string) string { return explorerCol.Render(s) }
+			switch {
+			case c.IsPK:
 				icon = "🔑"
-			} else if c.IsFK {
+				styleLeft = func(s string) string { return explorerPK.Render(s) }
+			case c.IsFK:
 				icon = "➤"
+				styleLeft = func(s string) string { return explorerFK.Render(s) }
 			}
 			left := "    " + icon + " " + r.Column
-			line = explorerLine(left, c.DataType, func(s string) string { return explorerType.Render(s) }, sidebarW)
+			line = explorerLineStyled(left, c.DataType, styleLeft, func(s string) string { return explorerType.Render(s) }, sidebarW)
 		}
 		if i+start == e.Cursor {
 			line = explorerSel.Render(line)
