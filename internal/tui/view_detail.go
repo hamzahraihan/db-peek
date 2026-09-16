@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -72,7 +73,7 @@ func (m Model) detailView() string {
 			}
 		case 3:
 			b.WriteString(m.queryEditorView() + "\n")
-			b.WriteString(dimStyle.Render(fitText("ctrl+r run • esc results • e edit", m.paneW())) + "\n")
+			b.WriteString(dimStyle.Render(fitText("tab complete • esc dismiss • ctrl+r run • e edit", m.paneW())) + "\n")
 			if m.querySample == nil {
 				b.WriteString(dimStyle.Render("(no results — ctrl+r to run)") + "\n")
 			} else {
@@ -140,7 +141,68 @@ func (m Model) queryEditorView() string {
 		}
 		lines = append(lines, m.editorLineView(lineIdx, src, cells, w))
 	}
+	// Autocomplete popup overlays the editor rows as a bordered box so the
+	// 8-row budget (and queryResultsTop mouse math) never shifts.
+	if m.showComplete && m.focusDetail && m.tab == 3 && m.queryFocus == 0 && len(m.completeItems) > 0 {
+		box := m.completePopupLines(w)
+		top, _, _, _ := m.popupGeometry(w)
+		copy(lines[top:], box)
+	}
 	return strings.Join(lines, "\n")
+}
+
+// completePopupLines renders the suggestion list as a bordered box: gold
+// border on a raised background, keywords gold, fields white, types cyan,
+// selected row in the purple selection role. Every line is padded to the
+// box width; truncation runs on plain text before styling so rows never
+// wrap and mouse hit-testing (popupGeometry) stays exact.
+func (m Model) completePopupLines(w int) []string {
+	top, left, boxW, nItems := m.popupGeometry(w)
+	_ = top
+	cw := boxW - 4 // padding + borders
+	if cw < 1 {
+		cw = 1
+	}
+	more := len(m.completeItems) > nItems
+	content := make([]string, 0, nItems+1)
+	for i, it := range m.completeItems[:min(nItems, len(m.completeItems))] {
+		text := fitText(it.Text, cw)
+		detail := fitText(" "+it.Detail, cw-lipgloss.Width(text))
+		var line string
+		switch it.Kind {
+		case "keyword":
+			line = sqlKeyword.Render(text) + dimStyle.Render(detail)
+		case "table":
+			line = colFieldStyle.Render(text) + dimStyle.Render(detail)
+		default:
+			line = colFieldStyle.Render(text) + colTypeStyle.Render(detail)
+		}
+		if i == m.completeIdx {
+			line = dataSelectedStyle.Render(fitText(it.Text+" "+it.Detail, cw))
+		}
+		if pad := cw - lipgloss.Width(line); pad > 0 {
+			line += strings.Repeat(" ", pad)
+		}
+		content = append(content, line)
+	}
+	if more {
+		foot := fitText("… "+strconv.Itoa(len(m.completeItems)-nItems)+" more", cw)
+		line := dimStyle.Render(foot)
+		if pad := cw - lipgloss.Width(line); pad > 0 {
+			line += strings.Repeat(" ", pad)
+		}
+		content = append(content, line)
+	}
+	box := completeBoxStyle.Render(strings.Join(content, "\n"))
+	lines := strings.Split(box, "\n")
+	gap := ""
+	if left > 0 {
+		gap = strings.Repeat(" ", left)
+	}
+	for i := range lines {
+		lines[i] = gap + lines[i]
+	}
+	return lines
 }
 
 // editorLineView renders one editor row: dim line number plus highlighted
