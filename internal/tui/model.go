@@ -72,6 +72,7 @@ type Model struct {
 	editor      Editor
 	queryFocus  int // 0 editor, 1 results (only meaningful when tab==3)
 	querySample *dbpkg.Sample
+	queryAffected int64 // rows affected by last write, -1 when last run was a query
 	queryMs     int64
 	querySeq    int
 	queryTable  dataTable
@@ -176,7 +177,7 @@ func New(connStr string, store *saved.Store) Model {
 		nameInput: nameInput, connInput: connInput, filterInput: filterInput,
 		connsItemH: cdelegate.Height() + cdelegate.Spacing(),
 		editor:     NewEditor(),
-		erFocus:    true,
+		erFocus:    true, queryAffected: -1,
 	}
 	m.refreshConns()
 	if m.connStr == "" {
