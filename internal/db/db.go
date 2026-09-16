@@ -61,7 +61,7 @@ func Open(connStr string) (*DB, error) {
 
 	switch {
 	case strings.HasPrefix(lower, "postgres://") || strings.HasPrefix(lower, "postgresql://"):
-		sqlDB, err := sql.Open("pgx", raw)
+		sqlDB, err := sql.Open("pgx", withSimpleProtocol(raw))
 		if err != nil {
 			return nil, err
 		}
