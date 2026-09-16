@@ -459,13 +459,32 @@ func (m Model) clickTable(x, y int) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// clickQuery routes query-tab clicks: editor rows position the cursor and
-// take editor focus; results grid rows select and take results focus.
+// clickQuery routes query-tab clicks: popup rows accept a suggestion,
+// editor rows position the cursor and take editor focus; results grid rows
+// select and take results focus.
 func (m Model) clickQuery(x, y int) (tea.Model, tea.Cmd) {
 	if len(m.editor.Lines) == 0 {
 		return m, nil
 	}
 	if rel := y - detailTableTop; rel >= 0 && rel < queryEditorH {
+		if m.showComplete && m.queryFocus == 0 && len(m.completeItems) > 0 {
+			top, left, boxW, n := m.popupGeometry(m.paneInnerW())
+			// Content rows start one row below the top border.
+			if idx := rel - (top + 1); idx >= 0 && idx < n && idx < len(m.completeItems) && x >= left && x < left+boxW {
+				it := m.completeItems[idx]
+				if ln := m.editor.CurLine; ln >= 0 && ln < len(m.editor.Lines) {
+					newLine, newCol := applyCompletion(m.editor.Lines[ln], m.editor.CurCol, it)
+					m.editor.Lines[ln] = newLine
+					m.editor.CurCol = newCol
+				}
+				m.showComplete = false
+				m.completeItems = nil
+				m.completeIdx = 0
+				m.clampEditorScroll()
+				logMouse("  clickQuery popup y=%d -> accept %d", y, idx)
+				return m, nil
+			}
+		}
 		m.queryFocus = 0
 		line := m.editor.OffY + rel
 		if line < 0 {
@@ -483,6 +502,7 @@ func (m Model) clickQuery(x, y int) (tea.Model, tea.Cmd) {
 			col = max
 		}
 		m.editor.CurCol = col
+		m.refreshCompletion()
 		logMouse("  clickQuery editor y=%d -> line %d col %d", y, line, col)
 		return m, nil
 	}
