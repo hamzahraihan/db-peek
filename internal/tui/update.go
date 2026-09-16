@@ -219,6 +219,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			qrows = [][]string{{"(no rows)"}}
 		}
 		m.queryTable.setData(qcols, qrows)
+		m.queryTable.SetHeaderStyles(dataFieldHeaderStyle, dimFieldHeaderStyle)
 		m.sizeTables()
 		return m, nil
 
@@ -348,9 +349,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Quit
 		}
-		// tab jumps between sidebar and detail. Leaving the sidebar
-		// blurs the filter input (the text stays applied).
+		// tab jumps between sidebar and detail — unless the query editor
+		// owns it: while typing a query, tab accepts a completion (or
+		// indents) and shift+tab stays the pane-switch escape hatch.
+		// Leaving the sidebar blurs the filter input (text stays applied).
 		if key == "tab" || key == "shift+tab" {
+			if key == "tab" && m.focusDetail && m.tab == 3 && m.queryFocus == 0 {
+				return m.detailKey(msg, key)
+			}
 			if !m.focusDetail {
 				m.filtering = false
 				m.filterInput.Blur()
@@ -623,9 +629,60 @@ func (m Model) detailKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 // sidebar. With results focused the grid moves and 1-5/r switch/rerun.
 func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 	if m.queryFocus == 0 {
+		// Autocomplete popup takes priority: Tab/Enter accept, Esc
+		// dismisses (a second Esc then drops to results), Up/Down move
+		// the selection instead of the editor cursor.
+		if m.showComplete {
+			switch key {
+			case "esc":
+				m.showComplete = false
+				m.completeItems = nil
+				m.completeIdx = 0
+				return m, nil
+			case "tab", "enter":
+				if m.completeIdx >= 0 && m.completeIdx < len(m.completeItems) {
+					it := m.completeItems[m.completeIdx]
+					if ln := m.editor.CurLine; ln >= 0 && ln < len(m.editor.Lines) {
+						newLine, newCol := applyCompletion(m.editor.Lines[ln], m.editor.CurCol, it)
+						m.editor.Lines[ln] = newLine
+						m.editor.CurCol = newCol
+					}
+				}
+				m.showComplete = false
+				m.completeItems = nil
+				m.completeIdx = 0
+				m.clampEditorScroll()
+				return m, nil
+			case "up":
+				if m.completeIdx > 0 {
+					m.completeIdx--
+				}
+				return m, nil
+			case "down":
+				if m.completeIdx < len(m.completeItems)-1 {
+					m.completeIdx++
+				}
+				return m, nil
+			case "ctrl+r", "f5":
+				m.showComplete = false
+				m.completeItems = nil
+				m.completeIdx = 0
+				m.querySeq++
+				m.loading = true
+				return m, m.runQuery()
+			}
+		}
 		switch key {
 		case "esc":
 			m.queryFocus = 1
+			return m, nil
+		case "tab":
+			// No popup open (the open case returns above): indent with
+			// two spaces. SQL ignores the extra whitespace.
+			m.editor.Insert(' ')
+			m.editor.Insert(' ')
+			m.clampEditorScroll()
+			m.refreshCompletion()
 			return m, nil
 		case "ctrl+r", "f5":
 			m.querySeq++
@@ -634,35 +691,44 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		case "enter":
 			m.editor.Newline()
 			m.clampEditorScroll()
+			m.refreshCompletion()
 			return m, nil
 		case "backspace":
 			m.editor.Backspace()
 			m.clampEditorScroll()
+			m.refreshCompletion()
 			return m, nil
 		case "delete":
 			m.editor.Delete()
+			m.refreshCompletion()
 			return m, nil
 		case "up":
 			m.editor.MoveUp()
 			m.clampEditorScroll()
+			m.refreshCompletion()
 			return m, nil
 		case "down":
 			m.editor.MoveDown()
 			m.clampEditorScroll()
+			m.refreshCompletion()
 			return m, nil
 		case "left":
 			m.editor.MoveLeft()
 			m.clampEditorScroll()
+			m.refreshCompletion()
 			return m, nil
 		case "right":
 			m.editor.MoveRight()
 			m.clampEditorScroll()
+			m.refreshCompletion()
 			return m, nil
 		case "home":
 			m.editor.Home()
+			m.refreshCompletion()
 			return m, nil
 		case "end":
 			m.editor.End()
+			m.refreshCompletion()
 			return m, nil
 		}
 		// Every rune inserts while editing, including "?" (Postgres JSON
@@ -673,6 +739,7 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 				m.editor.Insert(r)
 			}
 			m.clampEditorScroll()
+			m.refreshCompletion()
 			return m, nil
 		}
 		return m, nil
