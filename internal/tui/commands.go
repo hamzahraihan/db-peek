@@ -127,8 +127,8 @@ func (m Model) runQuery() tea.Cmd {
 		start := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		s, err := db.Query(ctx, sql)
-		return queryDoneMsg{sql: sql, sample: s, ms: time.Since(start).Milliseconds(), seq: seq, err: err, conn: conn}
+		s, n, err := db.RunUserQuery(ctx, sql)
+		return queryDoneMsg{sql: sql, sample: s, affected: n, ms: time.Since(start).Milliseconds(), seq: seq, err: err, conn: conn}
 	}
 }
 
