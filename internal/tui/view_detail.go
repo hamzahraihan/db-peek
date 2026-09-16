@@ -75,7 +75,15 @@ func (m Model) detailView() string {
 			b.WriteString(m.queryEditorView() + "\n")
 			b.WriteString(dimStyle.Render(fitText("tab complete • esc dismiss • ctrl+r run • e edit", m.paneW())) + "\n")
 			if m.querySample == nil {
-				b.WriteString(dimStyle.Render("(no results — ctrl+r to run)") + "\n")
+				if m.queryAffected >= 0 {
+					unit := "rows"
+					if m.queryAffected == 1 {
+						unit = "row"
+					}
+					b.WriteString(dimStyle.Render(fitText(fmt.Sprintf("%d %s affected • %d ms", m.queryAffected, unit, m.queryMs), m.paneW())) + "\n")
+				} else {
+					b.WriteString(dimStyle.Render("(no results — ctrl+r to run)") + "\n")
+				}
 			} else {
 				b.WriteString(gridView(&m.queryTable) + "\n")
 				b.WriteString(dimStyle.Render(fitText(fmt.Sprintf("%d rows • %d ms", len(m.querySample.Rows), m.queryMs), m.paneW())) + "\n")
