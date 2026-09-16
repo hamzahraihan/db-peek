@@ -3,6 +3,12 @@ package tui
 // Table builders translate query results into detail grids and fit them
 // to the terminal. They run after load messages arrive, before View.
 
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
+
 func (m *Model) buildTables() {
 	colCols := []string{"column", "type", "null", "default", "extra"}
 	var colRows [][]string
@@ -10,6 +16,22 @@ func (m *Model) buildTables() {
 		colRows = append(colRows, []string{c.Name, c.Type, c.Nullable, c.Default, c.Extra})
 	}
 	m.colTable.setData(colCols, colRows)
+	m.colTable.SetColStyles(
+		[]lipgloss.Style{colFieldStyle, colTypeStyle, colMetaStyle, colMetaStyle, colMetaStyle},
+		[]lipgloss.Style{dimColFieldStyle, dimColTypeStyle, dimColMetaStyle, dimColMetaStyle, dimColMetaStyle},
+	)
+	m.colTable.SetCellHook(func(col int, val string, dim bool) (lipgloss.Style, bool) {
+		if col != 4 {
+			return lipgloss.Style{}, false
+		}
+		if strings.HasPrefix(val, "PK") || strings.Contains(val, "PRI") {
+			if dim {
+				return dimColPKStyle, true
+			}
+			return colPKStyle, true
+		}
+		return lipgloss.Style{}, false
+	})
 
 	idxCols := []string{"index", "unique", "columns"}
 	var idxRows [][]string
@@ -17,6 +39,22 @@ func (m *Model) buildTables() {
 		idxRows = append(idxRows, []string{ix.Name, ix.Unique, ix.Columns})
 	}
 	m.idxTable.setData(idxCols, idxRows)
+	m.idxTable.SetColStyles(
+		[]lipgloss.Style{colFieldStyle, colMetaStyle, colTypeStyle},
+		[]lipgloss.Style{dimColFieldStyle, dimColMetaStyle, dimColTypeStyle},
+	)
+	m.idxTable.SetCellHook(func(col int, val string, dim bool) (lipgloss.Style, bool) {
+		if col != 1 {
+			return lipgloss.Style{}, false
+		}
+		if dim {
+			return dimColUniqueStyle, true
+		}
+		if strings.EqualFold(strings.TrimSpace(val), "yes") {
+			return colUniqueYesStyle, true
+		}
+		return colUniqueNoStyle, true
+	})
 
 	m.buildRowTable()
 }
@@ -36,6 +74,9 @@ func (m *Model) buildRowTable() {
 		rowRows = [][]string{{"(no rows)"}}
 	}
 	m.rowTable.setData(rowCols, rowRows)
+	// Header cells are field names: render them in the field role so they
+	// read as fields, distinct from the blue generic headers elsewhere.
+	m.rowTable.SetHeaderStyles(dataFieldHeaderStyle, dimFieldHeaderStyle)
 }
 
 // contentH is the split content height shared by sidebar and detail:
