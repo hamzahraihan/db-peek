@@ -39,7 +39,7 @@ func main() {
 		listF    = flag.Bool("list", false, "print table names and exit")
 		schemaF  = flag.String("schema", "", "print columns + indexes for TABLE and exit")
 		rowsF    = flag.String("rows", "", "print N rows of TABLE and exit (see --limit/--offset)")
-		queryF   = flag.String("query", "", "run SELECT SQL and exit")
+		queryF   = flag.String("query", "", "run SQL and exit (SELECT prints rows, writes print rows affected)")
 		limitF   = flag.Int("limit", 10, "row limit for --rows")
 		offsetF  = flag.Int("offset", 0, "rows to skip for --rows")
 		saveF    = flag.String("save", "", "save the connection as NAME and exit")
@@ -202,9 +202,17 @@ or a saved NAME. Env DATABASE_URL fills conn when no argument is given.
 		}
 		render(s.Columns, s.Rows)
 	case *queryF != "":
-		s, err := db.Query(ctx, *queryF)
+		s, n, err := db.RunUserQuery(ctx, *queryF)
 		if err != nil {
 			fatal(err)
+		}
+		if n >= 0 {
+			unit := "rows"
+			if n == 1 {
+				unit = "row"
+			}
+			fmt.Printf("%d %s affected\n", n, unit)
+			return
 		}
 		render(s.Columns, s.Rows)
 	}
