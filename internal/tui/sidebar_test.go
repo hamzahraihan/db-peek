@@ -465,17 +465,36 @@ func TestQueryRunSeqGuard(t *testing.T) {
 	m.table = "users"
 	m.tab = 3
 	m.querySeq = 5
-	stale := queryDoneMsg{sql: "select 1", seq: 4, sample: &db.Sample{Columns: []string{"a"}, Rows: [][]string{{"1"}}}}
+	stale := queryDoneMsg{sql: "select 1", seq: 4, sample: &db.Sample{Columns: []string{"a"}, Rows: [][]string{{"1"}}}, affected: -1}
 	u, _ := m.Update(stale)
 	m = u.(Model)
 	if m.querySample != nil {
 		t.Fatal("stale query reply must not apply")
 	}
-	fresh := queryDoneMsg{sql: "select 1", seq: 5, sample: &db.Sample{Columns: []string{"a"}, Rows: [][]string{{"1"}}}, ms: 3}
+	fresh := queryDoneMsg{sql: "select 1", seq: 5, sample: &db.Sample{Columns: []string{"a"}, Rows: [][]string{{"1"}}}, affected: -1, ms: 3}
 	u, _ = m.Update(fresh)
 	m = u.(Model)
 	if m.querySample == nil || m.queryMs != 3 {
 		t.Fatal("fresh query reply must apply")
+	}
+}
+
+func TestQueryWriteShowsAffected(t *testing.T) {
+	m := browseModel(t)
+	m.table = "users"
+	m.tab = 3
+	m.focusDetail = true
+	m.queryFocus = 1
+	m.querySeq = 6
+	m.width, m.height = 120, 40
+	m.resizeBrowse()
+	u, _ := m.Update(queryDoneMsg{sql: "insert", seq: 6, affected: 2, ms: 4})
+	m = u.(Model)
+	if m.querySample != nil || m.queryAffected != 2 {
+		t.Fatalf("write reply must clear grid and store count, got %+v", m.querySample)
+	}
+	if v := m.View(); !strings.Contains(v, "2 rows affected") {
+		t.Fatalf("view must show rows affected, got:\n%s", v)
 	}
 }
 
