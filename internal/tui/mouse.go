@@ -94,16 +94,16 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			if msg.Y == m.tabStripRow() {
 				return m.clickTabs(msg.X-m.paneX()-1, msg.Y)
 			}
-			return m.clickTable(msg.X-m.paneX()-1, msg.Y)
-		}
-		return m, nil // gap, right margin, footer: noop
-	case screenForm:
-		return m.clickForm(msg.Y)
-	default:
-		if msg.Y == m.tabStripRow() {
-			return m.clickTabs(msg.X-m.paneX()-1, msg.Y)
-		}
-		return m.clickTable(msg.X-m.paneX()-1, msg.Y)
+		return m.clickTable(msg.X-m.paneX()-1, msg.Y, msg.Shift)
+	}
+	return m, nil // gap, right margin, footer: noop
+case screenForm:
+	return m.clickForm(msg.Y)
+default:
+	if msg.Y == m.tabStripRow() {
+		return m.clickTabs(msg.X-m.paneX()-1, msg.Y)
+	}
+	return m.clickTable(msg.X-m.paneX()-1, msg.Y, msg.Shift)
 	}
 }
 
@@ -420,9 +420,9 @@ func (m Model) hoverTable(x, y int) (tea.Model, tea.Cmd) {
 
 // clickTable selects the data row under the cursor. x is the border-relative
 // content column (msg.X - paneX - 1); only the query editor uses it.
-func (m Model) clickTable(x, y int) (tea.Model, tea.Cmd) {
+func (m Model) clickTable(x, y int, shift bool) (tea.Model, tea.Cmd) {
 	if m.tab == 3 {
-		return m.clickQuery(x, y)
+		return m.clickQuery(x, y, shift)
 	}
 	if m.tab == 4 {
 		if name, ok := m.erHit(x, y); ok {
@@ -462,7 +462,7 @@ func (m Model) clickTable(x, y int) (tea.Model, tea.Cmd) {
 // clickQuery routes query-tab clicks: popup rows accept a suggestion,
 // editor rows position the cursor and take editor focus; results grid rows
 // select and take results focus.
-func (m Model) clickQuery(x, y int) (tea.Model, tea.Cmd) {
+func (m Model) clickQuery(x, y int, shift bool) (tea.Model, tea.Cmd) {
 	if len(m.editor.Lines) == 0 {
 		return m, nil
 	}
@@ -493,6 +493,13 @@ func (m Model) clickQuery(x, y int) (tea.Model, tea.Cmd) {
 		if line > len(m.editor.Lines)-1 {
 			line = len(m.editor.Lines) - 1
 		}
+		if shift {
+			m.editor.ExtendSelectionTo(line)
+			m.refreshCompletion()
+			logMouse("  clickQuery editor y=%d -> extend line %d", y, line)
+			return m, nil
+		}
+		m.editor.ClearSelection()
 		m.editor.CurLine = line
 		col := x - 3 // gutter: "%2d " line numbers
 		if col < 0 {

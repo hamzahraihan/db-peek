@@ -49,3 +49,22 @@ func TestCommentToggleBothKeyStrings(t *testing.T) {
 		}
 	}
 }
+
+func TestShiftClickExtendsBlock(t *testing.T) {
+	m := queryTabModel()
+	m.editor.SetText("SELECT 1\nFROM foo\nWHERE x")
+	m.width, m.height = 120, 40
+	m.resizeBrowse()
+	// Plain click line 0 (editor-relative): detailTableTop + 0.
+	u, _ := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: m.paneX() + 4, Y: detailTableTop})
+	m = u.(Model)
+	if m.editor.CurLine != 0 {
+		t.Fatalf("plain click line 0, got %d", m.editor.CurLine)
+	}
+	u, _ = m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: m.paneX() + 4, Y: detailTableTop + 2, Shift: true})
+	m = u.(Model)
+	lo, hi, active := m.editor.SelectedRange()
+	if !active || lo != 0 || hi != 2 {
+		t.Fatalf("shift-click must select 0-2, got %d-%d active=%v", lo, hi, active)
+	}
+}
