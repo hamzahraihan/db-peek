@@ -29,6 +29,35 @@ func TestEditorInsertAndText(t *testing.T) {
 	}
 }
 
+func TestEditorBlockDeleteAndComment(t *testing.T) {
+	e := NewEditor()
+	e.SetText("SELECT 1\nFROM foo\nWHERE x")
+	e.CurLine = 0
+	e.ExtendSelectionTo(1)
+	lo, hi, active := e.SelectedRange()
+	if !active || lo != 0 || hi != 1 {
+		t.Fatalf("want active 0-1, got %d-%d active=%v", lo, hi, active)
+	}
+	if got := e.SelectionText(); got != "SELECT 1\nFROM foo" {
+		t.Fatalf("selection text, got %q", got)
+	}
+	e.ToggleCommentRange()
+	if e.Lines[0] != "-- SELECT 1" || e.Lines[1] != "-- FROM foo" {
+		t.Fatalf("commented, got %q", e.Lines)
+	}
+	e.ToggleCommentRange()
+	if e.Lines[0] != "SELECT 1" || e.Lines[1] != "FROM foo" {
+		t.Fatalf("uncommented, got %q", e.Lines)
+	}
+	e.DeleteRange()
+	if got := e.Text(); got != "WHERE x" {
+		t.Fatalf("after delete, got %q", got)
+	}
+	if _, _, active := e.SelectedRange(); active {
+		t.Fatal("delete must clear selection")
+	}
+}
+
 func TestHighlightSQLKeywords(t *testing.T) {
 	cells := HighlightSQL("SELECT * FROM users -- hi\nWHERE id = 1")
 	flat := ""
