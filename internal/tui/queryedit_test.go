@@ -58,6 +58,31 @@ func TestEditorBlockDeleteAndComment(t *testing.T) {
 	}
 }
 
+func TestEditorDeleteCurrentLineSingleLine(t *testing.T) {
+	e := NewEditor()
+	e.SetText("SELECT 1")
+	e.DeleteCurrentLine()
+	if len(e.Lines) != 1 || e.Lines[0] != "" {
+		t.Fatalf("single-line delete must reset to [\"\"], got %q", e.Lines)
+	}
+	if _, _, active := e.SelectedRange(); active {
+		t.Fatal("delete must clear selection")
+	}
+}
+
+func TestEditorBlankLineCommentSymmetry(t *testing.T) {
+	e := NewEditor()
+	e.SetText("")
+	e.ToggleCommentLine()
+	if got := e.Text(); got != "-- " {
+		t.Fatalf("blank comment, got %q", got)
+	}
+	e.ToggleCommentLine()
+	if got := e.Text(); got != "" {
+		t.Fatalf("blank uncomment round-trip, got %q", got)
+	}
+}
+
 func TestHighlightSQLKeywords(t *testing.T) {
 	cells := HighlightSQL("SELECT * FROM users -- hi\nWHERE id = 1")
 	flat := ""

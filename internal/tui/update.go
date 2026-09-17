@@ -757,6 +757,7 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		case "tab":
 			// No popup open (the open case returns above): indent with
 			// two spaces. SQL ignores the extra whitespace.
+			m.editor.ClearSelection()
 			m.editor.Insert(' ')
 			m.editor.Insert(' ')
 			m.clampEditorScroll()
@@ -777,13 +778,7 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 				m.editor.DeleteRange()
 			} else {
 				// Delete current line without clipboard (spec: not a cut).
-				ln := m.editor.CurLine
-				m.editor.ClearSelection()
-				// Reuse DeleteRange via a one-line selection.
-				m.editor.selActive = true
-				m.editor.selAnchor = ln
-				m.editor.CurLine = ln
-				m.editor.DeleteRange()
+				m.editor.DeleteCurrentLine()
 			}
 			m.clampEditorScroll()
 			m.refreshCompletion()

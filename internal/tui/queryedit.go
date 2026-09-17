@@ -109,6 +109,7 @@ func (e *Editor) Text() string { return strings.Join(e.Lines, "\n") }
 func (e *Editor) SetText(s string) {
 	e.Lines = strings.Split(s, "\n")
 	e.CurLine, e.CurCol, e.OffY = 0, 0, 0
+	e.selActive = false
 }
 
 func (e *Editor) CursorXY() (int, int) { return e.CurLine, e.CurCol }
@@ -157,6 +158,25 @@ func (e *Editor) SelectionText() string {
 	return strings.Join(e.Lines[lo:hi+1], "\n")
 }
 
+func (e *Editor) DeleteCurrentLine() {
+	if len(e.Lines) == 0 {
+		e.Lines = []string{""}
+	}
+	if e.CurLine < 0 {
+		e.CurLine = 0
+	}
+	if e.CurLine >= len(e.Lines) {
+		e.CurLine = len(e.Lines) - 1
+	}
+	e.Lines = append(e.Lines[:e.CurLine], e.Lines[e.CurLine+1:]...)
+	if len(e.Lines) == 0 {
+		e.Lines = []string{""}
+	}
+	e.CurLine = min(e.CurLine, len(e.Lines)-1)
+	e.CurCol = 0
+	e.selActive = false
+}
+
 func (e *Editor) DeleteRange() {
 	lo, hi, active := e.SelectedRange()
 	if !active {
@@ -198,9 +218,8 @@ func (e *Editor) ToggleCommentRange() {
 	}
 	for i := lo; i <= hi; i++ {
 		if commented {
-			if u, _ := uncommentLine(e.Lines[i]); true {
-				e.Lines[i] = u
-			}
+			u, _ := uncommentLine(e.Lines[i])
+			e.Lines[i] = u
 		} else {
 			e.Lines[i] = commentLine(e.Lines[i])
 		}
@@ -209,7 +228,7 @@ func (e *Editor) ToggleCommentRange() {
 
 func (e *Editor) ToggleCommentLine() {
 	u, ok := uncommentLine(e.Lines[e.CurLine])
-	if ok || strings.HasPrefix(e.Lines[e.CurLine], "--") {
+	if ok {
 		e.Lines[e.CurLine] = u
 		return
 	}
