@@ -56,6 +56,28 @@ func TestFilterKeepsParents(t *testing.T) {
 	}
 }
 
+func TestNewExplorerExpandsPublicFirst(t *testing.T) {
+	// Supabase returns schemas alphabetically (auth before public);
+	// explorer must still default to public like TablePlus/DBeaver.
+	e := NewExplorer("supabase", []string{"auth", "public", "storage"})
+	if len(e.Schemas) != 3 {
+		t.Fatalf("want 3 schemas, got %v", e.Schemas)
+	}
+	for _, s := range e.Schemas {
+		if s.Name == "public" && !s.Expanded {
+			t.Fatalf("public should be expanded, got %+v", e.Schemas)
+		}
+		if s.Name != "public" && s.Expanded {
+			t.Fatalf("only public should be expanded, got %+v", e.Schemas)
+		}
+	}
+	// No public: fall back to first schema so tree isn't fully collapsed.
+	e2 := NewExplorer("x", []string{"app", "other"})
+	if !e2.Schemas[0].Expanded || e2.Schemas[1].Expanded {
+		t.Fatalf("want first expanded only, got %+v", e2.Schemas)
+	}
+}
+
 func TestExplorerRenderGoldSelection(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.ANSI256)
 	defer lipgloss.SetColorProfile(termenv.Ascii)

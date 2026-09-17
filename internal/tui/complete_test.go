@@ -195,3 +195,20 @@ func TestPopupClosedHasNoBorder(t *testing.T) {
 		t.Fatalf("closed popup must not render a border:\n%s", out)
 	}
 }
+
+// Wheel-scrolling the editor viewport past the cursor (OffY > CurLine)
+// must not panic the popup overlay: placement clamps to the visible rows.
+func TestPopupScrolledViewportNoPanic(t *testing.T) {
+	m := queryTabModel()
+	m.editor.SetText("SELECT ord")
+	m.editor.CurLine, m.editor.CurCol = 0, 10
+	m.refreshCompletion()
+	if !m.showComplete {
+		t.Fatalf("popup should be open")
+	}
+	m.editor.OffY = 2 // cursor scrolled off-screen, as mouse-wheel allows
+	lines := strings.Split(m.queryEditorView(), "\n")
+	if len(lines) != queryEditorH {
+		t.Fatalf("editor must stay %d lines, got %d", queryEditorH, len(lines))
+	}
+}

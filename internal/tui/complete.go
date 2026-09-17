@@ -20,7 +20,8 @@ type completeItem struct {
 
 // sqlKeywords are the static keyword candidates.
 var sqlKeywords = []string{
-	"SELECT", "FROM", "WHERE", "JOIN", "LEFT JOIN", "ON",
+	"SELECT", "FROM", "WHERE", "JOIN", "LEFT JOIN", "RIGHT JOIN", "INNER JOIN",
+	"FULL JOIN", "CROSS JOIN", "LEFT OUTER JOIN", "RIGHT OUTER JOIN", "FULL OUTER JOIN", "ON",
 	"GROUP BY", "ORDER BY", "LIMIT", "OFFSET", "HAVING", "UNION",
 	"INSERT", "UPDATE", "DELETE", "CREATE", "TABLE", "INDEX",
 	"AND", "OR", "NOT", "NULL", "AS", "DISTINCT",
@@ -289,7 +290,16 @@ func (m Model) popupGeometry(paneW int) (top, left, boxW, nItems int) {
 	if more {
 		boxH++
 	}
+	// The wheel can scroll the viewport past the cursor, leaving curRel
+	// outside [0, queryEditorH). Clamp to the visible rows so top can
+	// never escape the 8-line budget and panic the overlay copy.
 	curRel := m.editor.CurLine - m.editor.OffY
+	if curRel < 0 {
+		curRel = 0
+	}
+	if curRel > queryEditorH-1 {
+		curRel = queryEditorH - 1
+	}
 	availBelow := queryEditorH - (curRel + 1)
 	switch {
 	case boxH <= availBelow:

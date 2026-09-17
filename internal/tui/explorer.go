@@ -58,8 +58,18 @@ type Explorer struct {
 
 func NewExplorer(connName string, schemas []string) Explorer {
 	e := Explorer{ConnName: connName}
+	// TablePlus/DBeaver UX: public is the default working schema.
+	// Expand public when present, otherwise expand the first schema so
+	// the tree is never fully collapsed on connect.
+	expandIdx := 0
 	for i, s := range schemas {
-		e.Schemas = append(e.Schemas, SchemaNode{Name: s, Expanded: i == 0})
+		if s == "public" {
+			expandIdx = i
+			break
+		}
+	}
+	for i, s := range schemas {
+		e.Schemas = append(e.Schemas, SchemaNode{Name: s, Expanded: i == expandIdx})
 	}
 	return e
 }
