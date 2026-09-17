@@ -748,6 +748,10 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 			m.queryFocus = 1
 			return m, nil
 		case "ctrl+s":
+			if txt := m.editor.SelectionText(); txt != "" {
+				m.status = m.copySelectionText(txt)
+				return m, nil
+			}
 			m.status = m.copyQueryDump()
 			return m, nil
 		case "tab":
@@ -893,6 +897,10 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		m.err = ""
 		return m, m.runQuery()
 	case "ctrl+s":
+		if txt := m.editor.SelectionText(); txt != "" {
+			m.status = m.copySelectionText(txt)
+			return m, nil
+		}
 		m.status = m.copyQueryDump()
 		return m, nil
 	case "e":

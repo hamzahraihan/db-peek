@@ -80,6 +80,26 @@ func TestCopyQueryStripsNUL(t *testing.T) {
 	}
 }
 
+func TestCopySelectionOnly(t *testing.T) {
+	var got string
+	old := clipboardWriteAll
+	clipboardWriteAll = func(s string) error { got = s; return nil }
+	defer func() { clipboardWriteAll = old }()
+	m := queryTabModel()
+	m.editor.SetText("SELECT 1\nFROM foo\nWHERE x")
+	m.editor.CurLine = 0
+	m.editor.ExtendSelectionTo(1)
+	m.err = "boom"
+	u, _ := m.queryKeys(tea.KeyMsg{Type: tea.KeyCtrlS}, "ctrl+s")
+	m = u.(Model)
+	if got != "SELECT 1\nFROM foo" {
+		t.Fatalf("selection copy must exclude dump header and error, got %q", got)
+	}
+	if m.status == "" {
+		t.Fatal("status must report the copy")
+	}
+}
+
 // A panicking clipboard backend (atotto on Windows with hostile input)
 // must fall back to the file, never crash the TUI.
 func TestCopyQuerySurvivesClipboardPanic(t *testing.T) {
