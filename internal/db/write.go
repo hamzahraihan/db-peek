@@ -99,8 +99,7 @@ func isWriteStatement(sql string) bool {
 // A column literally named `returning` is an accepted false positive: it
 // routes via Query and the driver error surfaces normally.
 func hasReturningClause(sql string) bool {
-	s := stripLeadingComments(sql)
-	lower := strings.ToLower(s)
+	lower := strings.ToLower(stripLeadingComments(sql))
 	for i := strings.Index(lower, "returning"); i >= 0; i = strings.Index(lower, "returning") {
 		beforeOK := i == 0 || !isIdentChar(lower[i-1])
 		afterIdx := i + len("returning")
@@ -109,8 +108,6 @@ func hasReturningClause(sql string) bool {
 			return true
 		}
 		lower = lower[i+1:]
-		s = s[i+1:]
-		_ = s
 	}
 	return false
 }
@@ -155,7 +152,7 @@ func parseWriteTable(sql string) (string, string) {
 		// UPDATE [OR IGNORE/REPLACE] <table> — skip sqlite OR-conflict clause.
 		i := 1
 		if strings.ToUpper(toks[i]) == "OR" && i+2 < len(toks) {
-			i += 3
+			i += 2
 		}
 		if i >= len(toks) {
 			return "", ""
