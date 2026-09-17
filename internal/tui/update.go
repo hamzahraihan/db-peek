@@ -205,11 +205,56 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.querySample = msg.sample
 		m.queryAffected = msg.affected
+		m.queryPreviewTable = ""
 		m.queryMs = msg.ms
 		m.err = ""
 		if msg.affected >= 0 {
-			// Write path: no grid, the view shows rows-affected instead.
+			if msg.isDDL {
+				// DDL: no grid; refresh the schema tree so the new/dropped
+				// table shows up. Keep the affected count for the footer.
+				m.querySample = nil
+				m.queryPreviewTable = ""
+				m.queryAffected = msg.affected
+				m.queryMs = msg.ms
+				m.queryTable.setData([]string{"rows"}, [][]string{{"(no rows)"}})
+				m.sizeTables()
+				m.loading = true
+				return m, m.loadSchemas()
+			}
+			if msg.previewTable != "" && msg.sample != nil {
+				m.querySample = msg.sample
+				m.queryPreviewTable = msg.previewTable
+				m.queryAffected = msg.affected
+				m.queryMs = msg.ms
+				m.err = ""
+				var qcols []string
+				var qrows [][]string
+				qcols = append([]string(nil), msg.sample.Columns...)
+				for _, r := range msg.sample.Rows {
+					qrows = append(qrows, append([]string(nil), r...))
+				}
+				if len(qcols) == 0 {
+					qcols = []string{"rows"}
+					qrows = [][]string{{"(no rows)"}}
+				}
+				m.queryTable.setData(qcols, qrows)
+				m.queryTable.SetHeaderStyles(dataFieldHeaderStyle, dimFieldHeaderStyle)
+				m.sizeTables()
+				// Best-effort count refresh for the previewed table.
+				for _, s := range m.explorer.Schemas {
+					for _, tb := range s.Tables {
+						if tb.Name == msg.previewTable {
+							return m, m.loadOneCount(s.Name, tb.Name)
+						}
+					}
+				}
+				return m, nil
+			}
+			// Write path without preview: no grid, the view shows rows-affected instead.
 			m.querySample = nil
+			m.queryPreviewTable = ""
+			m.queryAffected = msg.affected
+			m.queryMs = msg.ms
 			m.queryTable.setData([]string{"rows"}, [][]string{{"(no rows)"}})
 			m.sizeTables()
 			return m, nil
@@ -422,6 +467,7 @@ func (m *Model) clearConnState() {
 	m.hoverER = ""
 	m.querySample = nil
 	m.queryAffected = -1
+	m.queryPreviewTable = ""
 	m.queryMs = 0
 	m.queryFocus = 0
 	m.tab = 0

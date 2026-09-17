@@ -498,6 +498,41 @@ func TestQueryWriteShowsAffected(t *testing.T) {
 	}
 }
 
+func TestQueryWritePreviewApplies(t *testing.T) {
+	m := browseModel(t)
+	m.table = "users"
+	m.tab = 3
+	m.focusDetail = true
+	m.queryFocus = 1
+	m.querySeq = 7
+	m.width, m.height = 120, 40
+	m.resizeBrowse()
+	prev := &db.Sample{Columns: []string{"id"}, Rows: [][]string{{"1"}}}
+	u, _ := m.Update(queryDoneMsg{sql: "insert into users values (1)", seq: 7, sample: prev, affected: 1, previewTable: "users", ms: 5})
+	m = u.(Model)
+	if m.querySample == nil || m.queryAffected != 1 {
+		t.Fatalf("preview reply must store grid and count, got %+v affected=%d", m.querySample, m.queryAffected)
+	}
+	if m.queryPreviewTable != "users" {
+		t.Fatalf("preview reply must store preview table, got %q", m.queryPreviewTable)
+	}
+	if len(m.queryTable.cols) != 1 || m.queryTable.cols[0] != "id" {
+		t.Fatalf("preview reply must build grid columns, got %+v", m.queryTable.cols)
+	}
+}
+
+func TestQueryWritePreviewStaleDropped(t *testing.T) {
+	m := browseModel(t)
+	m.tab = 3
+	m.querySeq = 7
+	prev := &db.Sample{Columns: []string{"id"}, Rows: [][]string{{"1"}}}
+	u, _ := m.Update(queryDoneMsg{sql: "insert", seq: 6, sample: prev, affected: 1, previewTable: "users"})
+	m = u.(Model)
+	if m.querySample != nil {
+		t.Fatal("stale preview reply must not apply")
+	}
+}
+
 func TestFocusedBorderGold(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.ANSI256)
 	defer lipgloss.SetColorProfile(termenv.Ascii)

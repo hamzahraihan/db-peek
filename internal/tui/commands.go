@@ -128,7 +128,27 @@ func (m Model) runQuery() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		s, n, err := db.RunUserQuery(ctx, sql)
-		return queryDoneMsg{sql: sql, sample: s, affected: n, ms: time.Since(start).Milliseconds(), seq: seq, err: err, conn: conn}
+		ms := time.Since(start).Milliseconds()
+		if err != nil {
+			return queryDoneMsg{sql: sql, ms: ms, seq: seq, err: err, conn: conn}
+		}
+		if n < 0 {
+			// SELECT or RETURNING path: returned rows are the result view.
+			return queryDoneMsg{sql: sql, sample: s, affected: -1, ms: ms, seq: seq, conn: conn}
+		}
+		tbl, isDDL := dbpkg.PreviewTarget(sql)
+		if isDDL {
+			return queryDoneMsg{sql: sql, affected: n, isDDL: true, ms: ms, seq: seq, conn: conn}
+		}
+		if tbl == "" {
+			return queryDoneMsg{sql: sql, affected: n, ms: ms, seq: seq, conn: conn}
+		}
+		preview, perr := db.PageRows(ctx, tbl, 20, 0)
+		if perr != nil {
+			// Swallowed by design: affected-count is the source of truth.
+			return queryDoneMsg{sql: sql, affected: n, ms: time.Since(start).Milliseconds(), seq: seq, conn: conn}
+		}
+		return queryDoneMsg{sql: sql, sample: preview, affected: n, previewTable: tbl, ms: time.Since(start).Milliseconds(), seq: seq, conn: conn}
 	}
 }
 
@@ -155,7 +175,7 @@ func (m Model) loadERSchema(schema string, tables []string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		type res struct {
-			t   string
+			t    string
 			cols []dbpkg.Column
 			err  error
 		}
@@ -215,6 +235,7 @@ func (m Model) loadERSchema(schema string, tables []string) tea.Cmd {
 		return erSchemaLoadedMsg{tables: out, links: links, seq: seq, err: firstErr, conn: conn}
 	}
 }
+
 // loadColumns resolves table names within the connection's default
 // schema/search_path (consistent with the ApproxCount parked ruling):
 // the schema arg scopes explorer state only; db.Columns takes a plain

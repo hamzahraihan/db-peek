@@ -48,13 +48,15 @@ type (
 		err     error
 	}
 	queryDoneMsg struct {
-		sql      string
-		sample   *dbpkg.Sample
-		affected int64 // rows affected for writes, -1 for row-returning queries
-		ms       int64
-		seq      int
-		conn     int
-		err      error
+		sql          string
+		sample       *dbpkg.Sample
+		affected     int64  // rows affected for writes, -1 for row-returning queries
+		previewTable string // auto-preview target for writes, "" when none
+		isDDL        bool   // true when the write was DDL (refresh schemas, no grid)
+		ms           int64
+		seq          int
+		conn         int
+		err          error
 	}
 	erLoadedMsg struct {
 		table string

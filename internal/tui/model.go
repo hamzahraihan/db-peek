@@ -69,13 +69,14 @@ type Model struct {
 	idxTable    dataTable
 	rowTable    dataTable
 
-	editor      Editor
-	queryFocus  int // 0 editor, 1 results (only meaningful when tab==3)
-	querySample *dbpkg.Sample
-	queryAffected int64 // rows affected by last write, -1 when last run was a query
-	queryMs     int64
-	querySeq    int
-	queryTable  dataTable
+	editor            Editor
+	queryFocus        int // 0 editor, 1 results (only meaningful when tab==3)
+	querySample       *dbpkg.Sample
+	queryAffected     int64  // rows affected by last write, -1 when last run was a query
+	queryPreviewTable string // auto-preview target for the last write, "" when none
+	queryMs           int64
+	querySeq          int
+	queryTable        dataTable
 	// SQL autocomplete popup (query tab, editor focused only).
 	showComplete   bool
 	completeIdx    int
