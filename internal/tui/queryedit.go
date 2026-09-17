@@ -9,10 +9,12 @@ import (
 )
 
 type Editor struct {
-	Lines   []string
-	CurLine int
-	CurCol  int // rune offset within line
-	OffY    int // first visible line
+	Lines     []string
+	CurLine   int
+	CurCol    int // rune offset within line
+	OffY      int // first visible line
+	selAnchor int
+	selActive bool
 }
 
 func NewEditor() Editor { return Editor{Lines: []string{""}} }
@@ -107,9 +109,131 @@ func (e *Editor) Text() string { return strings.Join(e.Lines, "\n") }
 func (e *Editor) SetText(s string) {
 	e.Lines = strings.Split(s, "\n")
 	e.CurLine, e.CurCol, e.OffY = 0, 0, 0
+	e.selActive = false
 }
 
 func (e *Editor) CursorXY() (int, int) { return e.CurLine, e.CurCol }
+
+func (e *Editor) ClearSelection() { e.selActive = false }
+
+func (e *Editor) SelectedRange() (int, int, bool) {
+	if !e.selActive {
+		return 0, 0, false
+	}
+	lo, hi := e.selAnchor, e.CurLine
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	if lo < 0 {
+		lo = 0
+	}
+	if hi >= len(e.Lines) {
+		hi = len(e.Lines) - 1
+	}
+	return lo, hi, true
+}
+
+func (e *Editor) ExtendSelectionTo(line int) {
+	if !e.selActive {
+		e.selAnchor, e.selActive = e.CurLine, true
+	}
+	if line < 0 {
+		line = 0
+	}
+	if line >= len(e.Lines) {
+		line = len(e.Lines) - 1
+	}
+	e.CurLine = line
+	rs := []rune(e.Lines[e.CurLine])
+	if e.CurCol > len(rs) {
+		e.CurCol = len(rs)
+	}
+}
+
+func (e *Editor) SelectionText() string {
+	lo, hi, active := e.SelectedRange()
+	if !active {
+		return ""
+	}
+	return strings.Join(e.Lines[lo:hi+1], "\n")
+}
+
+func (e *Editor) DeleteCurrentLine() {
+	if len(e.Lines) == 0 {
+		e.Lines = []string{""}
+	}
+	if e.CurLine < 0 {
+		e.CurLine = 0
+	}
+	if e.CurLine >= len(e.Lines) {
+		e.CurLine = len(e.Lines) - 1
+	}
+	e.Lines = append(e.Lines[:e.CurLine], e.Lines[e.CurLine+1:]...)
+	if len(e.Lines) == 0 {
+		e.Lines = []string{""}
+	}
+	e.CurLine = min(e.CurLine, len(e.Lines)-1)
+	e.CurCol = 0
+	e.selActive = false
+}
+
+func (e *Editor) DeleteRange() {
+	lo, hi, active := e.SelectedRange()
+	if !active {
+		return
+	}
+	e.Lines = append(e.Lines[:lo], e.Lines[hi+1:]...)
+	if len(e.Lines) == 0 {
+		e.Lines = []string{""}
+	}
+	e.CurLine = min(lo, len(e.Lines)-1)
+	e.CurCol = 0
+	e.selActive = false
+}
+
+func commentLine(s string) string { return "-- " + s }
+
+func uncommentLine(s string) (string, bool) {
+	if strings.HasPrefix(s, "-- ") {
+		return s[3:], true
+	}
+	if strings.HasPrefix(s, "--") {
+		return s[2:], true
+	}
+	return s, false
+}
+
+func (e *Editor) ToggleCommentRange() {
+	lo, hi, active := e.SelectedRange()
+	if !active {
+		e.ToggleCommentLine()
+		return
+	}
+	commented := true
+	for _, ln := range e.Lines[lo : hi+1] {
+		if !strings.HasPrefix(ln, "--") {
+			commented = false
+			break
+		}
+	}
+	for i := lo; i <= hi; i++ {
+		if commented {
+			u, _ := uncommentLine(e.Lines[i])
+			e.Lines[i] = u
+		} else {
+			e.Lines[i] = commentLine(e.Lines[i])
+		}
+	}
+}
+
+func (e *Editor) ToggleCommentLine() {
+	u, ok := uncommentLine(e.Lines[e.CurLine])
+	if ok {
+		e.Lines[e.CurLine] = u
+		return
+	}
+	e.Lines[e.CurLine] = commentLine(e.Lines[e.CurLine])
+}
 
 type hlCell struct {
 	Text  string

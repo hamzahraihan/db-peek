@@ -689,6 +689,17 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		// the selection instead of the editor cursor.
 		if m.showComplete {
 			switch key {
+			case "shift+up", "shift+down":
+				m.showComplete = false
+				m.completeItems = nil
+				m.completeIdx = 0
+				if key == "shift+up" {
+					m.editor.ExtendSelectionTo(m.editor.CurLine - 1)
+				} else {
+					m.editor.ExtendSelectionTo(m.editor.CurLine + 1)
+				}
+				m.clampEditorScroll()
+				return m, nil
 			case "esc":
 				m.showComplete = false
 				m.completeItems = nil
@@ -730,16 +741,50 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		}
 		switch key {
 		case "esc":
+			if _, _, active := m.editor.SelectedRange(); active {
+				m.editor.ClearSelection()
+				return m, nil
+			}
 			m.queryFocus = 1
 			return m, nil
 		case "ctrl+s":
+			if txt := m.editor.SelectionText(); txt != "" {
+				m.status = m.copySelectionText(txt)
+				return m, nil
+			}
 			m.status = m.copyQueryDump()
 			return m, nil
 		case "tab":
 			// No popup open (the open case returns above): indent with
 			// two spaces. SQL ignores the extra whitespace.
+			m.editor.ClearSelection()
 			m.editor.Insert(' ')
 			m.editor.Insert(' ')
+			m.clampEditorScroll()
+			m.refreshCompletion()
+			return m, nil
+		case "shift+up":
+			m.editor.ExtendSelectionTo(m.editor.CurLine - 1)
+			m.clampEditorScroll()
+			m.refreshCompletion()
+			return m, nil
+		case "shift+down":
+			m.editor.ExtendSelectionTo(m.editor.CurLine + 1)
+			m.clampEditorScroll()
+			m.refreshCompletion()
+			return m, nil
+		case "ctrl+d":
+			if _, _, active := m.editor.SelectedRange(); active {
+				m.editor.DeleteRange()
+			} else {
+				// Delete current line without clipboard (spec: not a cut).
+				m.editor.DeleteCurrentLine()
+			}
+			m.clampEditorScroll()
+			m.refreshCompletion()
+			return m, nil
+		case "ctrl+/", "ctrl+_":
+			m.editor.ToggleCommentRange()
 			m.clampEditorScroll()
 			m.refreshCompletion()
 			return m, nil
@@ -749,44 +794,53 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 			m.err = ""
 			return m, m.runQuery()
 		case "enter":
+			m.editor.ClearSelection()
 			m.editor.Newline()
 			m.clampEditorScroll()
 			m.refreshCompletion()
 			return m, nil
 		case "backspace":
+			m.editor.ClearSelection()
 			m.editor.Backspace()
 			m.clampEditorScroll()
 			m.refreshCompletion()
 			return m, nil
 		case "delete":
+			m.editor.ClearSelection()
 			m.editor.Delete()
 			m.refreshCompletion()
 			return m, nil
 		case "up":
+			m.editor.ClearSelection()
 			m.editor.MoveUp()
 			m.clampEditorScroll()
 			m.refreshCompletion()
 			return m, nil
 		case "down":
+			m.editor.ClearSelection()
 			m.editor.MoveDown()
 			m.clampEditorScroll()
 			m.refreshCompletion()
 			return m, nil
 		case "left":
+			m.editor.ClearSelection()
 			m.editor.MoveLeft()
 			m.clampEditorScroll()
 			m.refreshCompletion()
 			return m, nil
 		case "right":
+			m.editor.ClearSelection()
 			m.editor.MoveRight()
 			m.clampEditorScroll()
 			m.refreshCompletion()
 			return m, nil
 		case "home":
+			m.editor.ClearSelection()
 			m.editor.Home()
 			m.refreshCompletion()
 			return m, nil
 		case "end":
+			m.editor.ClearSelection()
 			m.editor.End()
 			m.refreshCompletion()
 			return m, nil
@@ -795,6 +849,7 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		// operators need it). Task 7's "?"-overlay must intercept "?"
 		// before detailKey routing except when the editor is focused.
 		if msg.Type == tea.KeyRunes {
+			m.editor.ClearSelection()
 			for _, r := range msg.Runes {
 				m.editor.Insert(r)
 			}
@@ -837,6 +892,10 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		m.err = ""
 		return m, m.runQuery()
 	case "ctrl+s":
+		if txt := m.editor.SelectionText(); txt != "" {
+			m.status = m.copySelectionText(txt)
+			return m, nil
+		}
 		m.status = m.copyQueryDump()
 		return m, nil
 	case "e":

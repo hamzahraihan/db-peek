@@ -52,3 +52,22 @@ func writeQueryDumpFile(text string) string {
 	}
 	return "clipboard unavailable — wrote db-peek-debug.txt"
 }
+
+// copySelectionText copies the raw selected lines (no dump header, no
+// error trailer). It shares the never-panic clipboard path.
+func (m *Model) copySelectionText(text string) (status string) {
+	text = strings.ReplaceAll(text, "\x00", "")
+	n := len(strings.Split(text, "\n"))
+	defer func() {
+		if recover() != nil {
+			status = writeQueryDumpFile(text)
+		}
+	}()
+	if err := clipboardWriteAll(text); err == nil {
+		if n == 1 {
+			return "1 line copied to clipboard"
+		}
+		return fmt.Sprintf("%d lines copied to clipboard", n)
+	}
+	return writeQueryDumpFile(text)
+}

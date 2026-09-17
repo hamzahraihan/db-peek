@@ -73,7 +73,7 @@ func (m Model) detailView() string {
 			}
 		case 3:
 			b.WriteString(m.queryEditorView() + "\n")
-			b.WriteString(dimStyle.Render(fitText("tab complete • ctrl+s copy • ctrl+r run • e edit", m.paneW())) + "\n")
+			b.WriteString(dimStyle.Render(fitText("shift+↑↓ select • ctrl+d del • ctrl+s copy • ctrl+/ comment • ctrl+r run", m.paneW())) + "\n")
 			if m.querySample == nil {
 				if m.queryAffected >= 0 {
 					unit := "rows"
@@ -252,17 +252,25 @@ func (m Model) editorLineView(lineIdx int, src string, cells []hlCell, w int) st
 	rs, styles = rs[:keep], styles[:keep]
 	var b strings.Builder
 	b.WriteString(dimStyle.Render(fmt.Sprintf("%2d ", lineIdx+1)))
+	finish := func() string {
+		lineStr := b.String()
+		if lo, hi, active := m.editor.SelectedRange(); active && lineIdx >= lo && lineIdx <= hi {
+			// Reuse the grid selection role so block matches app chrome.
+			return dataSelectedStyle.Render(lineStr)
+		}
+		return lineStr
+	}
 	focused := m.focusDetail && m.tab == 3 && m.queryFocus == 0
 	if !focused {
 		b.WriteString(dimStyle.Render(string(rs)))
-		return b.String()
+		return finish()
 	}
 	cur := m.editor.CurCol
 	if lineIdx != m.editor.CurLine || cur < 0 {
 		for i, r := range rs {
 			b.WriteString(styles[i].Render(string(r)))
 		}
-		return b.String()
+		return finish()
 	}
 	if cur > len(rs) {
 		cur = len(rs)
@@ -277,5 +285,5 @@ func (m Model) editorLineView(lineIdx int, src string, cells []hlCell, w int) st
 	if cur == len(rs) {
 		b.WriteString(queryCursorStyle.Render(" "))
 	}
-	return b.String()
+	return finish()
 }
