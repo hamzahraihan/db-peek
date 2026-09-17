@@ -221,6 +221,23 @@ func PreviewTarget(sql string) (string, bool) {
 	return tbl, kind == "ddl"
 }
 
+// HintForError returns an actionable suffix for known infrastructure
+// failures. A protocol-violation through a pooler almost always means the
+// pooler mangled the wire flow, so point at the direct connection instead
+// of the cryptic server code. Empty string when no hint applies.
+func HintForError(connStr string, err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "08P01") && !strings.Contains(msg, "invalid message format") {
+		return ""
+	}
+	if lower := strings.ToLower(connStr); strings.Contains(lower, ":6543") || strings.Contains(lower, "pooler") {
+		return " (pooler detected — retry with the direct :5432 connection)"
+	}
+	return " (protocol error — retry with the direct database connection)"
+}
 // RunUserQuery routes one editor statement: row-returning statements go
 // through Query (grid), everything else through ExecStmt (rows affected,
 // returned as n with a nil sample). n is -1 for the query path.

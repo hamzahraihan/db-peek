@@ -182,12 +182,14 @@ type Sample struct {
 	Total   int64 // -1 when unknown
 }
 
-// ListTables returns user tables ordered by name.
+// ListTables returns user tables ordered by name, skipping
+// Postgres-internal (pg_*) and Supabase-managed schemas just like
+// ListSchemas — so --list matches the explorer (public-first UX).
 func (d *DB) ListTables(ctx context.Context) ([]string, error) {
 	var q string
 	switch d.Driver {
 	case Postgres:
-		q = `SELECT tablename FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema') ORDER BY tablename`
+		q = `SELECT tablename FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema','auth','storage','realtime','extensions','graphql','graphql_public','supabase_functions','supabase_migrations','vault','pgsodium','pgsodium_masks','net','postgis','_postgis','tiger','tiger_data','topology','cron','_realtime','_supabase') AND schemaname NOT LIKE 'pg\_%' ESCAPE '\' AND schemaname NOT LIKE 'pg_temp_%' AND schemaname NOT LIKE 'pg_toast%' ORDER BY tablename`
 	case MySQL:
 		q = `SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' ORDER BY table_name`
 	default:

@@ -10,10 +10,52 @@ type TableRef struct {
 	IsView bool
 }
 
+// SystemSchemas are Postgres-internal or Supabase-managed schemas that
+// clutter the explorer (TablePlus/DBeaver hide these by default and show
+// public). Exported so the TUI and CLI can share the same filter.
+var SystemSchemas = []string{
+	"pg_catalog", "information_schema",
+	// Supabase-managed services (auth, storage, realtime, etc.).
+	"auth", "storage", "realtime", "extensions",
+	"graphql", "graphql_public",
+	"supabase_functions", "supabase_migrations",
+	"vault", "pgsodium", "pgsodium_masks", "net",
+	// Common extension schemas users rarely want in the explorer.
+	"postgis", "_postgis", "tiger", "tiger_data", "topology",
+	"cron", "_realtime", "_supabase",
+}
+
+// IsSystemSchema reports whether s is a Postgres-internal (pg_*) or a
+// known Supabase/extension-managed schema. User schemas — including
+// "public" and any custom schema — return false.
+func IsSystemSchema(s string) bool {
+	if len(s) >= 3 && (s == "pg_catalog" || len(s) > 3 && s[:3] == "pg_") {
+		return true
+	}
+	// pg_temp_* / pg_toast* backends per-connection.
+	if len(s) >= 7 && s[:7] == "pg_temp" {
+		return true
+	}
+	if len(s) >= 8 && s[:8] == "pg_toast" {
+		return true
+	}
+	for _, sys := range SystemSchemas {
+		if s == sys {
+			return true
+		}
+	}
+	return false
+}
+
 func (d *DB) ListSchemas(ctx context.Context) ([]string, error) {
 	switch d.Driver {
 	case Postgres:
-		rows, err := d.SQL.QueryContext(ctx, `SELECT schema_name FROM information_schema.schemata WHERE schema_name NOT IN ('pg_catalog','information_schema') ORDER BY 1`)
+		rows, err := d.SQL.QueryContext(ctx, `SELECT schema_name FROM information_schema.schemata
+WHERE schema_name NOT IN ('pg_catalog','information_schema','auth','storage','realtime','extensions','graphql','graphql_public','supabase_functions','supabase_migrations','vault','pgsodium','pgsodium_masks','net','postgis','_postgis','tiger','tiger_data','topology','cron','_realtime','_supabase')
+AND schema_name NOT LIKE 'pg\_%' ESCAPE '\'
+AND schema_name NOT LIKE 'pg_temp_%'
+AND schema_name NOT LIKE 'pg_toast%'
+ORDER BY CASE WHEN schema_name='public' THEN 0 ELSE 1 END, schema_name`)
 		if err != nil {
 			return nil, err
 		}

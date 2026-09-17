@@ -53,3 +53,25 @@ func TestApproxCountSQLite(t *testing.T) {
 		t.Fatalf("want 2, got %d", n)
 	}
 }
+
+func TestIsSystemSchema(t *testing.T) {
+	system := []string{
+		"pg_catalog", "information_schema",
+		"pg_toast", "pg_temp_1", "pg_toast_temp_1", "pg_stat",
+		"auth", "storage", "realtime", "extensions",
+		"graphql", "graphql_public", "supabase_functions", "supabase_migrations",
+		"vault", "pgsodium", "pgsodium_masks", "net",
+		"cron", "_realtime", "_supabase",
+	}
+	for _, s := range system {
+		if !IsSystemSchema(s) {
+			t.Errorf("IsSystemSchema(%q)=false, want true", s)
+		}
+	}
+	user := []string{"public", "app", "my_schema"}
+	for _, s := range user {
+		if IsSystemSchema(s) {
+			t.Errorf("IsSystemSchema(%q)=true, want false", s)
+		}
+	}
+}
