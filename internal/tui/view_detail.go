@@ -73,7 +73,7 @@ func (m Model) detailView() string {
 			}
 		case 3:
 			b.WriteString(m.queryEditorView() + "\n")
-			b.WriteString(dimStyle.Render(fitText("tab complete • esc dismiss • ctrl+r run • e edit", m.paneW())) + "\n")
+			b.WriteString(dimStyle.Render(fitText("tab complete • ctrl+s copy • ctrl+r run • e edit", m.paneW())) + "\n")
 			if m.querySample == nil {
 				if m.queryAffected >= 0 {
 					unit := "rows"

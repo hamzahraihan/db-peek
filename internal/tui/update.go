@@ -200,7 +200,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.loading = false
 		if msg.err != nil {
-			m.err = msg.err.Error()
+			m.err = msg.err.Error() + dbpkg.HintForError(m.connStr, msg.err)
 			return m, nil // keep editor text + old results
 		}
 		m.querySample = msg.sample
@@ -724,12 +724,16 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 				m.completeIdx = 0
 				m.querySeq++
 				m.loading = true
+				m.err = ""
 				return m, m.runQuery()
 			}
 		}
 		switch key {
 		case "esc":
 			m.queryFocus = 1
+			return m, nil
+		case "ctrl+s":
+			m.status = m.copyQueryDump()
 			return m, nil
 		case "tab":
 			// No popup open (the open case returns above): indent with
@@ -742,6 +746,7 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		case "ctrl+r", "f5":
 			m.querySeq++
 			m.loading = true
+			m.err = ""
 			return m, m.runQuery()
 		case "enter":
 			m.editor.Newline()
@@ -829,7 +834,11 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 	case "ctrl+r", "f5", "r":
 		m.querySeq++
 		m.loading = true
+		m.err = ""
 		return m, m.runQuery()
+	case "ctrl+s":
+		m.status = m.copyQueryDump()
+		return m, nil
 	case "e":
 		m.queryFocus = 0
 		m.clampEditorScroll()

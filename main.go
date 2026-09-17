@@ -204,7 +204,7 @@ or a saved NAME. Env DATABASE_URL fills conn when no argument is given.
 	case *queryF != "":
 		s, n, err := db.RunUserQuery(ctx, *queryF)
 		if err != nil {
-			fatal(err)
+			fatal(fmt.Errorf("%w%s", err, dbpkg.HintForError(conn, err)))
 		}
 		if n >= 0 {
 			unit := "rows"

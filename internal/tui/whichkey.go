@@ -42,6 +42,7 @@ var keyRegistry = []KeyBinding{
 	{"ctrl+u/ctrl+d", "half-page grid", "Detail"},
 	{"g/G", "top/bottom of grid", "Detail"},
 	{"ctrl+r/F5", "run query", "Query editor"},
+	{"ctrl+s", "copy query+error", "Query editor"},
 	{"esc", "editor to results", "Query editor"},
 	{"?", "this help", "Global"},
 	{"a/e/d", "add/edit/forget connection", "Connections"},
