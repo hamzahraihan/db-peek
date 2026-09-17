@@ -88,6 +88,31 @@ func TestTrimStatement(t *testing.T) {
 	}
 }
 
+func TestParseWriteTable(t *testing.T) {
+	cases := map[string][2]string{
+		"INSERT INTO foo VALUES (1)":                   {"foo", "insert"},
+		`INSERT INTO "foo" VALUES (1)`:                 {"foo", "insert"},
+		"insert into public.foo values (1)":            {"foo", "insert"},
+		"INSERT INTO IF NOT EXISTS foo (a) VALUES (1)": {"foo", "insert"},
+		"UPDATE foo SET a=1":                           {"foo", "update"},
+		"update public.foo set a=1 where id=2":         {"foo", "update"},
+		"DELETE FROM foo WHERE id=1":                   {"foo", "delete"},
+		"delete from `foo` where id=1":                 {"foo", "delete"},
+		"CREATE TABLE foo (a INT)":                     {"foo", "ddl"},
+		"DROP TABLE IF EXISTS foo":                     {"foo", "ddl"},
+		"ALTER TABLE foo ADD COLUMN b TEXT":            {"foo", "ddl"},
+		"SELECT * FROM foo":                            {"", ""},
+		"WITH x AS (SELECT 1) SELECT * FROM x":         {"", ""},
+		"-- c\n/* b */ INSERT INTO foo VALUES (1)":     {"foo", "insert"},
+	}
+	for q, want := range cases {
+		tbl, kind := parseWriteTable(q)
+		if tbl != want[0] || kind != want[1] {
+			t.Fatalf("parseWriteTable(%q) = (%q,%q), want (%q,%q)", q, tbl, kind, want[0], want[1])
+		}
+	}
+}
+
 func TestExecStmtSQLite(t *testing.T) {
 	d, err := Open(":memory:")
 	if err != nil {

@@ -119,6 +119,111 @@ func isIdentChar(c byte) bool {
 	return c == '_' || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
 }
 
+// parseWriteTable extracts the single target table of a write statement:
+// INSERT INTO <t>, UPDATE <t>, DELETE FROM <t>, or DDL
+// (CREATE/DROP/ALTER TABLE <t>). Returns ("", "") when the target is
+// unclear (SELECT/WITH/CTE/multi-statement). Quoting (`"foo"`, “ `foo` “,
+// `[foo]`) is stripped and `schema.foo` yields `foo`.
+func parseWriteTable(sql string) (string, string) {
+	s := stripLeadingComments(sql)
+	toks := splitSQLWords(s)
+	if len(toks) == 0 {
+		return "", ""
+	}
+	head := strings.ToUpper(toks[0])
+	var raw, kind string
+	switch head {
+	case "INSERT":
+		// INSERT INTO [IF NOT EXISTS] <table>
+		i := 1
+		if i < len(toks) && strings.ToUpper(toks[i]) == "INTO" {
+			i++
+		} else {
+			return "", ""
+		}
+		for i < len(toks) && (strings.ToUpper(toks[i]) == "IF" || strings.ToUpper(toks[i]) == "NOT" || strings.ToUpper(toks[i]) == "EXISTS") {
+			i++
+		}
+		if i >= len(toks) {
+			return "", ""
+		}
+		raw, kind = toks[i], "insert"
+	case "UPDATE":
+		if len(toks) < 2 {
+			return "", ""
+		}
+		// UPDATE [OR IGNORE/REPLACE] <table> — skip sqlite OR-conflict clause.
+		i := 1
+		if strings.ToUpper(toks[i]) == "OR" && i+2 < len(toks) {
+			i += 3
+		}
+		if i >= len(toks) {
+			return "", ""
+		}
+		raw, kind = toks[i], "update"
+	case "DELETE":
+		// DELETE FROM <table>
+		if len(toks) < 3 || strings.ToUpper(toks[1]) != "FROM" {
+			return "", ""
+		}
+		raw, kind = toks[2], "delete"
+	case "CREATE", "DROP", "ALTER":
+		// CREATE TABLE [IF NOT EXISTS] <t> / DROP TABLE [IF EXISTS] <t> /
+		// ALTER TABLE [IF EXISTS] <t>
+		i := 1
+		if i < len(toks) && strings.ToUpper(toks[i]) == "TABLE" {
+			i++
+		} else {
+			return "", ""
+		}
+		for i < len(toks) && (strings.ToUpper(toks[i]) == "IF" || strings.ToUpper(toks[i]) == "NOT" || strings.ToUpper(toks[i]) == "EXISTS") {
+			i++
+		}
+		if i >= len(toks) {
+			return "", ""
+		}
+		raw, kind = toks[i], "ddl"
+	default:
+		return "", ""
+	}
+	return unquoteTable(raw), kind
+}
+
+func splitSQLWords(s string) []string {
+	// Split on whitespace and '(' — `INSERT INTO foo(a)` yields ["INSERT","INTO","foo"].
+	// Semicolons terminate: only the first statement is considered.
+	if i := strings.Index(s, ";"); i >= 0 {
+		s = s[:i]
+	}
+	return strings.FieldsFunc(s, func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '('
+	})
+}
+
+func unquoteTable(raw string) string {
+	t := strings.TrimSpace(raw)
+	// Strip trailing comma/paren remnants, then schema qualifier.
+	t = strings.Trim(t, ",()")
+	if i := strings.LastIndex(t, "."); i >= 0 {
+		t = t[i+1:]
+	}
+	t = strings.Trim(t, "\"`[]\"")
+	// A bare "?" or keyword means unclear.
+	if t == "" || strings.ContainsAny(t, " \t\n\r\"'`()[].,;") {
+		return ""
+	}
+	return t
+}
+
+// PreviewTarget returns the table to auto-preview after sql succeeds,
+// and whether it is DDL (the caller refreshes schemas instead of
+// gridding). Plain DML yields (table, false); DDL yields (table, true);
+// unclear targets yield ("", false).
+func PreviewTarget(sql string) (string, bool) {
+	tbl, kind := parseWriteTable(sql)
+	return tbl, kind == "ddl"
+}
+
 // RunUserQuery routes one editor statement: row-returning statements go
 // through Query (grid), everything else through ExecStmt (rows affected,
 // returned as n with a nil sample). n is -1 for the query path.
