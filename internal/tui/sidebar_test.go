@@ -547,3 +547,22 @@ func TestFocusedBorderGold(t *testing.T) {
 		t.Fatalf("focused pane must draw gold border:\n%s", v)
 	}
 }
+
+func TestQueryPreviewFooterNeedsTable(t *testing.T) {
+	// Pins the singular/plural preview footer. Fails until view_detail.go
+	// renders queryPreviewTable.
+	m := browseModel(t)
+	m.table = "users"
+	m.tab = 3
+	m.focusDetail = true
+	m.queryFocus = 1
+	m.querySeq = 8
+	m.width, m.height = 120, 40
+	m.resizeBrowse()
+	prev := &db.Sample{Columns: []string{"id"}, Rows: [][]string{{"1"}, {"2"}}}
+	u, _ := m.Update(queryDoneMsg{sql: "insert", seq: 8, sample: prev, affected: 2, previewTable: "users", ms: 6})
+	m = u.(Model)
+	if v := m.View(); !strings.Contains(v, "2 rows affected • preview of users") {
+		t.Fatalf("plural preview footer missing, got:\n%s", v)
+	}
+}

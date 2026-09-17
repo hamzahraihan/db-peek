@@ -86,7 +86,15 @@ func (m Model) detailView() string {
 				}
 			} else {
 				b.WriteString(gridView(&m.queryTable) + "\n")
-				b.WriteString(dimStyle.Render(fitText(fmt.Sprintf("%d rows • %d ms", len(m.querySample.Rows), m.queryMs), m.paneW())) + "\n")
+				if m.queryAffected >= 0 && m.queryPreviewTable != "" {
+					unit := "rows"
+					if m.queryAffected == 1 {
+						unit = "row"
+					}
+					b.WriteString(dimStyle.Render(fitText(fmt.Sprintf("%d %s affected • preview of %s • %d ms", m.queryAffected, unit, m.queryPreviewTable, m.queryMs), m.paneW())) + "\n")
+				} else {
+					b.WriteString(dimStyle.Render(fitText(fmt.Sprintf("%d rows • %d ms", len(m.querySample.Rows), m.queryMs), m.paneW())) + "\n")
+				}
 			}
 		case 4:
 			b.WriteString(m.erView(m.paneInnerW(), m.paneInnerH()) + "\n")
