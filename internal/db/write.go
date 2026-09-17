@@ -75,6 +75,9 @@ func isWriteStatement(sql string) bool {
 	if s == "" {
 		return false
 	}
+	if hasReturningClause(sql) {
+		return false
+	}
 	word := s
 	for i, r := range s {
 		if r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '(' {
@@ -88,6 +91,32 @@ func isWriteStatement(sql string) bool {
 	default:
 		return true
 	}
+}
+
+// hasReturningClause reports whether sql carries a standalone RETURNING
+// keyword (INSERT/UPDATE/DELETE ... RETURNING). Matching is
+// case-insensitive on word boundaries after stripping leading comments.
+// A column literally named `returning` is an accepted false positive: it
+// routes via Query and the driver error surfaces normally.
+func hasReturningClause(sql string) bool {
+	s := stripLeadingComments(sql)
+	lower := strings.ToLower(s)
+	for i := strings.Index(lower, "returning"); i >= 0; i = strings.Index(lower, "returning") {
+		beforeOK := i == 0 || !isIdentChar(lower[i-1])
+		afterIdx := i + len("returning")
+		afterOK := afterIdx >= len(lower) || !isIdentChar(lower[afterIdx])
+		if beforeOK && afterOK {
+			return true
+		}
+		lower = lower[i+1:]
+		s = s[i+1:]
+		_ = s
+	}
+	return false
+}
+
+func isIdentChar(c byte) bool {
+	return c == '_' || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
 }
 
 // RunUserQuery routes one editor statement: row-returning statements go

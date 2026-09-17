@@ -58,6 +58,30 @@ func TestClassifyStatement(t *testing.T) {
 	}
 }
 
+func TestReturningGoesThroughQueryPath(t *testing.T) {
+	query := []string{
+		"INSERT INTO t VALUES (1) RETURNING *",
+		"insert into t values (1) returning id",
+		"-- comment\nUPDATE t SET a=1 RETURNING a",
+		"/* block */ DELETE FROM t RETURNING id",
+	}
+	for _, q := range query {
+		if isWriteStatement(q) {
+			t.Fatalf("want query path for %q", q)
+		}
+		if !hasReturningClause(q) {
+			t.Fatalf("want returning detected for %q", q)
+		}
+	}
+	if hasReturningClause("SELECT returning FROM t") {
+		// `returning` as a bare column name still matches the keyword;
+		// accepted limitation: it routes via Query and surfaces driver errors.
+	}
+	if hasReturningClause("INSERT INTO t VALUES (1)") {
+		t.Fatal("plain insert must not count as returning")
+	}
+}
+
 func TestTrimStatement(t *testing.T) {
 	if got := trimStatement("  SELECT 1; ; \n"); got != "SELECT 1" {
 		t.Fatalf("got %q", got)
