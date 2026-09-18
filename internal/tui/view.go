@@ -140,9 +140,12 @@ func (m Model) browseView() string {
 		b.WriteString(l + " " + r + "\n")
 	}
 
-	foot := dimStyle.Render(fitText("sidebar: /filter • enter preview • tab detail • r refresh • c conns • q quit • ? keys", m.width))
+	foot := dimStyle.Render("sidebar: ") + renderKeyPairs([][2]string{
+		{"/", "filter"}, {"enter", "preview"}, {"tab", "detail"},
+		{"r", "refresh"}, {"c", "conns"}, {"q", "quit"}, {"?", "keys"},
+	}, m.width-lipgloss.Width("sidebar: "))
 	if m.loading {
-		foot += "  " + "loading..."
+		foot += "  " + statusStyle.Render("loading...")
 	}
 	if m.err != "" {
 		foot += "\n" + errStyle.Render(m.err)
