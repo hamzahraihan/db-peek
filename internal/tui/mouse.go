@@ -461,14 +461,15 @@ func (m Model) clickTable(x, y int, shift bool) (tea.Model, tea.Cmd) {
 
 // clickQuery routes query-tab clicks: popup rows accept a suggestion,
 // editor rows position the cursor and take editor focus; results grid rows
-// select and take results focus.
+// select and take results focus. x is the border-relative content column;
+// the panel border + indented gutter (" %2d ") offset code by 5 cells.
 func (m Model) clickQuery(x, y int, shift bool) (tea.Model, tea.Cmd) {
 	if len(m.editor.Lines) == 0 {
 		return m, nil
 	}
-	if rel := y - detailTableTop; rel >= 0 && rel < queryEditorH {
+	if rel := y - queryEditorTop(); rel >= 0 && rel < queryEditorH {
 		if m.showComplete && m.queryFocus == 0 && len(m.completeItems) > 0 {
-			top, left, boxW, n := m.popupGeometry(m.paneInnerW())
+			top, left, boxW, n := m.popupGeometry(m.queryEditorInnerW())
 			// Content rows start one row below the top border.
 			if idx := rel - (top + 1); idx >= 0 && idx < n && idx < len(m.completeItems) && x >= left && x < left+boxW {
 				it := m.completeItems[idx]
@@ -501,7 +502,7 @@ func (m Model) clickQuery(x, y int, shift bool) (tea.Model, tea.Cmd) {
 		}
 		m.editor.ClearSelection()
 		m.editor.CurLine = line
-		col := x - 3 // gutter: "%2d " line numbers
+		col := x - 5 // panel border(1) + gutter " %2d "(4)
 		if col < 0 {
 			col = 0
 		}
