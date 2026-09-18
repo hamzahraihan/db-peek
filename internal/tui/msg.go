@@ -56,6 +56,7 @@ type (
 		ms           int64
 		seq          int
 		conn         int
+		qbufID       int // query buffer id at run time; replies for closed buffers are dropped
 		err          error
 	}
 	erLoadedMsg struct {
