@@ -72,7 +72,6 @@ func (t *dataTable) setData(cols []string, rows [][]string) {
 	}
 	t.hover = -1
 	t.clampOffset()
-
 }
 
 func (t *dataTable) Resize(w, totalH int) {
@@ -153,6 +152,7 @@ func (t *dataTable) SetHover(n int) {
 	}
 	t.hover = n
 }
+
 func (t *dataTable) RowAt(rel int) (int, bool) {
 	r := rel - dataHeaderH
 	if r < 0 || r >= t.height {
