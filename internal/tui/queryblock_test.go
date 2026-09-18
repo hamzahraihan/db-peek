@@ -58,13 +58,14 @@ func TestShiftClickExtendsBlock(t *testing.T) {
 	m.editor.SetText("SELECT 1\nFROM foo\nWHERE x")
 	m.width, m.height = 120, 40
 	m.resizeBrowse()
-	// Plain click line 0 (editor-relative): detailTableTop + 0.
-	u, _ := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: m.paneX() + 4, Y: detailTableTop})
+	// Plain click line 0 (editor-relative): queryEditorTop + 0.
+	// X stays left of the autocomplete popup so clicks hit editor rows.
+	u, _ := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: m.paneX() + 3, Y: queryEditorTop()})
 	m = u.(Model)
 	if m.editor.CurLine != 0 {
 		t.Fatalf("plain click line 0, got %d", m.editor.CurLine)
 	}
-	u, _ = m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: m.paneX() + 4, Y: detailTableTop + 2, Shift: true})
+	u, _ = m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: m.paneX() + 3, Y: queryEditorTop() + 2, Shift: true})
 	m = u.(Model)
 	lo, hi, active := m.editor.SelectedRange()
 	if !active || lo != 0 || hi != 2 {
