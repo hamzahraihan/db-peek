@@ -46,7 +46,13 @@ func (m Model) detailView() string {
 		}
 		b.WriteString(" ")
 	}
-	b.WriteString("\n\n")
+	if m.tab == 3 {
+		// Buffer strip replaces the blank row so editor Y math
+		// (detailTableTop/queryResultsTop) never shifts.
+		b.WriteString("\n" + m.queryStripView(m.paneW()) + "\n")
+	} else {
+		b.WriteString("\n\n")
+	}
 	if m.loading {
 		b.WriteString("loading...\n")
 	} else {
@@ -72,17 +78,21 @@ func (m Model) detailView() string {
 				b.WriteString("\n")
 			}
 		case 3:
-			b.WriteString(m.queryEditorView() + "\n")
-			b.WriteString(dimStyle.Render(fitText("shift+↑↓ select • ctrl+d del • ctrl+s copy • ctrl+/ comment • ctrl+r run", m.paneW())) + "\n")
+			b.WriteString("\n")
+			b.WriteString(m.queryEditorPanel() + "\n")
+			b.WriteString(renderKeyPairs([][2]string{
+				{"esc", "results"}, {"shift+↑↓", "select"}, {"ctrl+d", "del"},
+				{"ctrl+/", "comment"}, {"ctrl+r", "run"}, {"ctrl+s", "copy"},
+			}, m.paneW()) + "\n")
 			if m.querySample == nil {
 				if m.queryAffected >= 0 {
 					unit := "rows"
 					if m.queryAffected == 1 {
 						unit = "row"
 					}
-					b.WriteString(dimStyle.Render(fitText(fmt.Sprintf("%d %s affected • %d ms", m.queryAffected, unit, m.queryMs), m.paneW())) + "\n")
+					b.WriteString(renderStatus(fmt.Sprintf("%d %s affected • %d ms", m.queryAffected, unit, m.queryMs), m.paneW()) + "\n")
 				} else {
-					b.WriteString(dimStyle.Render("(no results — ctrl+r to run)") + "\n")
+					b.WriteString(renderStatus("(no results — ctrl+r to run)", m.paneW()) + "\n")
 				}
 			} else {
 				b.WriteString(gridView(&m.queryTable) + "\n")
@@ -91,9 +101,9 @@ func (m Model) detailView() string {
 					if m.queryAffected == 1 {
 						unit = "row"
 					}
-					b.WriteString(dimStyle.Render(fitText(fmt.Sprintf("%d %s affected • preview of %s • %d ms", m.queryAffected, unit, m.queryPreviewTable, m.queryMs), m.paneW())) + "\n")
+					b.WriteString(renderStatus(fmt.Sprintf("%d %s affected • preview of %s • %d ms", m.queryAffected, unit, m.queryPreviewTable, m.queryMs), m.paneW()) + "\n")
 				} else {
-					b.WriteString(dimStyle.Render(fitText(fmt.Sprintf("%d rows • %d ms", len(m.querySample.Rows), m.queryMs), m.paneW())) + "\n")
+					b.WriteString(renderStatus(fmt.Sprintf("%d rows • %d ms", len(m.querySample.Rows), m.queryMs), m.paneW()) + "\n")
 				}
 			}
 		case 4:
@@ -110,16 +120,37 @@ func (m Model) detailView() string {
 	if m.err != "" {
 		b.WriteString(errStyle.Render(m.err) + "\n")
 	}
-	foot := "hover highlights • click tabs • wheel scroll • 1-5 tabs • r reload"
-	if m.tab == 4 {
-		if m.erIsFocused() {
-			foot = "f all tables • n/p select • enter recenter • wasd/arrows pan • r reload"
-		} else {
-			foot = "f focused view • n/p select • enter recenter • wasd/arrows pan • r reload"
-		}
-	}
-	b.WriteString(dimStyle.Render(fitText(foot, m.paneW())))
+	b.WriteString(m.detailFoot())
 	return b.String()
+}
+
+// detailFoot is the single-line keybinding footer: bright keys, muted
+// labels, one row always so mouse hit-testing never shifts.
+func (m Model) detailFoot() string {
+	w := m.paneW()
+	switch m.tab {
+	case 3:
+		return renderKeyPairs([][2]string{
+			{"H/L", "buffer"}, {"t", "new"}, {"X", "close"},
+			{"e", "edit"}, {"1-5", "tabs"}, {"?", "keys"},
+		}, w)
+	case 4:
+		if m.erIsFocused() {
+			return renderKeyPairs([][2]string{
+				{"f", "all tables"}, {"n/p", "select"}, {"enter", "recenter"},
+				{"wasd", "pan"}, {"r", "reload"},
+			}, w)
+		}
+		return renderKeyPairs([][2]string{
+			{"f", "focused view"}, {"n/p", "select"}, {"enter", "recenter"},
+			{"wasd", "pan"}, {"r", "reload"},
+		}, w)
+	default:
+		return renderKeyPairs([][2]string{
+			{"↑↓", "move"}, {"pgup/pgdn", "page"}, {"n/p", "page"},
+			{"s", "size"}, {"1-5", "tabs"}, {"?", "keys"},
+		}, w)
+	}
 }
 
 // paneW is the detail pane's usable width: terminal minus sidebar and separator.
@@ -133,16 +164,32 @@ const queryEditorH = 8
 // queryCursorStyle marks the cursor cell while the editor has focus.
 var queryCursorStyle = lipgloss.NewStyle().Reverse(true)
 
+// queryEditorTop is the first terminal row of the editor content:
+// detailTableTop + 1 padding row + 1 panel top border.
+func queryEditorTop() int { return detailTableTop + 2 }
+
+// queryEditorInnerW is the editor content width: pane minus the panel's
+// left/right borders.
+func (m Model) queryEditorInnerW() int {
+	w := m.paneInnerW() - 2
+	if w < 1 {
+		w = 1
+	}
+	return w
+}
+
 // queryResultsTop is the first terminal row of the query results grid:
-// editor top + editor rows + the status/hint line.
-func queryResultsTop() int { return detailTableTop + queryEditorH + 1 }
+// padding(1) + panel top(1) + editor(8) + panel bottom(1) + hint(1)
+// below the strip row.
+func queryResultsTop() int { return detailTableTop + queryEditorH + 4 }
 
 // queryEditorView renders the fixed 8-row highlighted editor with dim line
 // numbers and a reverse-video cursor cell when the editor has focus.
 // HighlightSQL("") yields [[]] and SetText("") yields [""], so empty
 // cell-rows render as blank lines and no empty row is ever indexed.
+// Content width is the panel inner width (pane minus panel borders).
 func (m Model) queryEditorView() string {
-	w := m.paneInnerW()
+	w := m.queryEditorInnerW()
 	hl := HighlightSQL(m.editor.Text())
 	lines := make([]string, 0, queryEditorH)
 	for i := 0; i < queryEditorH; i++ {
@@ -165,6 +212,22 @@ func (m Model) queryEditorView() string {
 		copy(lines[top:], box)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// queryEditorPanel frames the 8 editor rows in a rounded panel with one
+// blank padding row above it (written by the caller) separating the edit
+// area from the tab/buffer strip. Content lines are padded to the inner
+// width so the panel keeps a uniform box.
+func (m Model) queryEditorPanel() string {
+	w := m.queryEditorInnerW()
+	lines := strings.Split(m.queryEditorView(), "\n")
+	for i := range lines {
+		if pad := w - lipgloss.Width(lines[i]); pad > 0 {
+			lines[i] += strings.Repeat(" ", pad)
+		}
+	}
+	focused := m.focusDetail && m.tab == 3 && m.queryFocus == 0
+	return editorPanelBorder(focused).Width(w).Render(strings.Join(lines, "\n"))
 }
 
 // completePopupLines renders the suggestion list as a bordered box: gold
@@ -222,9 +285,11 @@ func (m Model) completePopupLines(w int) []string {
 }
 
 // editorLineView renders one editor row: dim line number plus highlighted
-// code capped to the pane width. cells may be empty (blank line).
+// code capped to the panel inner width. cells may be empty (blank line).
+// The gutter carries one leading space so line numbers sit slightly off
+// the panel's left border.
 func (m Model) editorLineView(lineIdx int, src string, cells []hlCell, w int) string {
-	const gutter = 3 // "%2d " line numbers
+	const gutter = 4 // " %2d " line numbers
 	maxCode := w - gutter
 	if maxCode < 1 {
 		maxCode = 1
@@ -251,7 +316,7 @@ func (m Model) editorLineView(lineIdx int, src string, cells []hlCell, w int) st
 	}
 	rs, styles = rs[:keep], styles[:keep]
 	var b strings.Builder
-	b.WriteString(dimStyle.Render(fmt.Sprintf("%2d ", lineIdx+1)))
+	b.WriteString(dimStyle.Render(fmt.Sprintf(" %2d ", lineIdx+1)))
 	finish := func() string {
 		lineStr := b.String()
 		if lo, hi, active := m.editor.SelectedRange(); active && lineIdx >= lo && lineIdx <= hi {
