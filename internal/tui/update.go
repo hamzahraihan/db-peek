@@ -195,38 +195,72 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.conn != m.connSeq {
 			return m, nil // superseded by a connection switch
 		}
-		if msg.seq != m.querySeq {
-			return m, nil // superseded by a newer run
+		m.ensureQueryBufs()
+		bufIdx := -1
+		if msg.qbufID == 0 {
+			// Legacy/test path without buffer id: route to active buffer
+			// when the global seq matches.
+			if msg.seq != m.querySeq {
+				return m, nil // superseded by a newer run
+			}
+			bufIdx = m.qcur
+			m.qbufs[bufIdx].seq = msg.seq
+		} else {
+			for i, b := range m.qbufs {
+				if b.id == msg.qbufID {
+					bufIdx = i
+					break
+				}
+			}
+			if bufIdx < 0 {
+				return m, nil // buffer closed since the run
+			}
+			if msg.seq != m.qbufs[bufIdx].seq {
+				return m, nil // superseded by a newer run on that buffer
+			}
 		}
 		m.loading = false
 		if msg.err != nil {
-			m.err = msg.err.Error() + dbpkg.HintForError(m.connStr, msg.err)
+			errStr := msg.err.Error() + dbpkg.HintForError(m.connStr, msg.err)
+			m.qbufs[bufIdx].errStr = errStr
+			if bufIdx == m.qcur {
+				m.err = errStr
+			}
 			return m, nil // keep editor text + old results
 		}
-		m.querySample = msg.sample
-		m.queryAffected = msg.affected
-		m.queryPreviewTable = ""
-		m.queryMs = msg.ms
-		m.err = ""
+		applyBuf := &m.qbufs[bufIdx]
+		applyBuf.sample = msg.sample
+		applyBuf.affected = msg.affected
+		applyBuf.previewTable = ""
+		applyBuf.ms = msg.ms
+		applyBuf.errStr = ""
 		if msg.affected >= 0 {
 			if msg.isDDL {
 				// DDL: no grid; refresh the schema tree so the new/dropped
 				// table shows up. Keep the affected count for the footer.
-				m.querySample = nil
-				m.queryPreviewTable = ""
-				m.queryAffected = msg.affected
-				m.queryMs = msg.ms
-				m.queryTable.setData([]string{"rows"}, [][]string{{"(no rows)"}})
-				m.sizeTables()
+				applyBuf.sample = nil
+				applyBuf.previewTable = ""
+				applyBuf.affected = msg.affected
+				applyBuf.ms = msg.ms
+				applyBuf.table.setData([]string{"rows"}, [][]string{{"(no rows)"}})
+				if bufIdx == m.qcur {
+					m.querySample = nil
+					m.queryPreviewTable = ""
+					m.queryAffected = msg.affected
+					m.queryMs = msg.ms
+					m.err = ""
+					m.queryTable.setData([]string{"rows"}, [][]string{{"(no rows)"}})
+					m.sizeTables()
+				}
 				m.loading = true
 				return m, m.loadSchemas()
 			}
 			if msg.previewTable != "" && msg.sample != nil {
-				m.querySample = msg.sample
-				m.queryPreviewTable = msg.previewTable
-				m.queryAffected = msg.affected
-				m.queryMs = msg.ms
-				m.err = ""
+				applyBuf.sample = msg.sample
+				applyBuf.previewTable = msg.previewTable
+				applyBuf.affected = msg.affected
+				applyBuf.ms = msg.ms
+				applyBuf.errStr = ""
 				var qcols []string
 				var qrows [][]string
 				qcols = append([]string(nil), msg.sample.Columns...)
@@ -237,9 +271,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					qcols = []string{"rows"}
 					qrows = [][]string{{"(no rows)"}}
 				}
-				m.queryTable.setData(qcols, qrows)
-				m.queryTable.SetHeaderStyles(dataFieldHeaderStyle, dimFieldHeaderStyle)
-				m.sizeTables()
+				applyBuf.table.setData(qcols, qrows)
+				applyBuf.table.SetHeaderStyles(dataFieldHeaderStyle, dimFieldHeaderStyle)
+				if bufIdx == m.qcur {
+					m.querySample = msg.sample
+					m.queryPreviewTable = msg.previewTable
+					m.queryAffected = msg.affected
+					m.queryMs = msg.ms
+					m.err = ""
+					m.queryTable.setData(qcols, qrows)
+					m.queryTable.SetHeaderStyles(dataFieldHeaderStyle, dimFieldHeaderStyle)
+					m.sizeTables()
+				}
 				// Best-effort count refresh for the previewed table.
 				for _, s := range m.explorer.Schemas {
 					for _, tb := range s.Tables {
@@ -251,12 +294,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			// Write path without preview: no grid, the view shows rows-affected instead.
-			m.querySample = nil
-			m.queryPreviewTable = ""
-			m.queryAffected = msg.affected
-			m.queryMs = msg.ms
-			m.queryTable.setData([]string{"rows"}, [][]string{{"(no rows)"}})
-			m.sizeTables()
+			applyBuf.sample = nil
+			applyBuf.previewTable = ""
+			applyBuf.affected = msg.affected
+			applyBuf.ms = msg.ms
+			applyBuf.table.setData([]string{"rows"}, [][]string{{"(no rows)"}})
+			if bufIdx == m.qcur {
+				m.querySample = nil
+				m.queryPreviewTable = ""
+				m.queryAffected = msg.affected
+				m.queryMs = msg.ms
+				m.err = ""
+				m.queryTable.setData([]string{"rows"}, [][]string{{"(no rows)"}})
+				m.sizeTables()
+			}
 			return m, nil
 		}
 		var qcols []string
@@ -271,9 +322,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			qcols = []string{"rows"}
 			qrows = [][]string{{"(no rows)"}}
 		}
-		m.queryTable.setData(qcols, qrows)
-		m.queryTable.SetHeaderStyles(dataFieldHeaderStyle, dimFieldHeaderStyle)
-		m.sizeTables()
+		applyBuf.table.setData(qcols, qrows)
+		applyBuf.table.SetHeaderStyles(dataFieldHeaderStyle, dimFieldHeaderStyle)
+		if bufIdx == m.qcur {
+			m.querySample = msg.sample
+			m.queryAffected = msg.affected
+			m.queryPreviewTable = ""
+			m.queryMs = msg.ms
+			m.err = ""
+			m.queryTable.setData(qcols, qrows)
+			m.queryTable.SetHeaderStyles(dataFieldHeaderStyle, dimFieldHeaderStyle)
+			m.sizeTables()
+		}
 		return m, nil
 
 	case erLoadedMsg:
@@ -455,6 +515,18 @@ func (m *Model) clearConnState() {
 	m.page = 0
 	m.detailSeq++
 	m.querySeq++
+	m.qbufs = nil
+	m.qcur = 0
+	m.ensureQueryBufs()
+	m.qbufs[0].editor = NewEditor()
+	m.qbufs[0].sample = nil
+	m.qbufs[0].affected = -1
+	m.qbufs[0].previewTable = ""
+	m.qbufs[0].ms = 0
+	m.qbufs[0].table = dataTable{}
+	m.qbufs[0].errStr = ""
+	m.qbufs[0].seq = m.querySeq
+	m.loadActiveBuf(0)
 	m.erSeq++
 	m.explorer = NewExplorer("", nil)
 	m.erSchema = erSchemaState{}
@@ -733,10 +805,23 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 				m.showComplete = false
 				m.completeItems = nil
 				m.completeIdx = 0
-				m.querySeq++
-				m.loading = true
-				m.err = ""
+				m.startQueryRun()
 				return m, m.runQuery()
+			case "ctrl+t":
+				m.showComplete = false
+				m.completeItems = nil
+				m.completeIdx = 0
+				m.saveActiveBuf()
+				m.newQueryBuf()
+				m.refreshCompletion()
+				return m, nil
+			case "ctrl+w":
+				m.showComplete = false
+				m.completeItems = nil
+				m.completeIdx = 0
+				m.closeQueryBuf()
+				m.refreshCompletion()
+				return m, nil
 			}
 		}
 		switch key {
@@ -789,10 +874,17 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 			m.refreshCompletion()
 			return m, nil
 		case "ctrl+r", "f5":
-			m.querySeq++
-			m.loading = true
-			m.err = ""
+			m.startQueryRun()
 			return m, m.runQuery()
+		case "ctrl+t":
+			m.saveActiveBuf()
+			m.newQueryBuf()
+			m.refreshCompletion()
+			return m, nil
+		case "ctrl+w":
+			m.closeQueryBuf()
+			m.refreshCompletion()
+			return m, nil
 		case "enter":
 			m.editor.ClearSelection()
 			m.editor.Newline()
@@ -887,10 +979,21 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 		cmd := m.setTab(4)
 		return m, cmd
 	case "ctrl+r", "f5", "r":
-		m.querySeq++
-		m.loading = true
-		m.err = ""
+		m.startQueryRun()
 		return m, m.runQuery()
+	case "ctrl+t", "t":
+		m.saveActiveBuf()
+		m.newQueryBuf()
+		return m, nil
+	case "ctrl+w", "X":
+		m.closeQueryBuf()
+		return m, nil
+	case "H":
+		m.switchQueryBuf(-1)
+		return m, nil
+	case "L":
+		m.switchQueryBuf(1)
+		return m, nil
 	case "ctrl+s":
 		if txt := m.editor.SelectionText(); txt != "" {
 			m.status = m.copySelectionText(txt)
