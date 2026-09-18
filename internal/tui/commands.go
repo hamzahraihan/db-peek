@@ -121,7 +121,9 @@ func (m Model) loadOneCount(schema, table string) tea.Cmd {
 }
 
 func (m Model) runQuery() tea.Cmd {
-	db, sql, seq := m.db, m.editor.Text(), m.querySeq
+	m.ensureQueryBufs()
+	db, sql, seq := m.db, m.editor.Text(), m.qbufs[m.qcur].seq
+	qid := m.qbufs[m.qcur].id
 	conn := m.connSeq
 	return func() tea.Msg {
 		start := time.Now()
@@ -130,25 +132,25 @@ func (m Model) runQuery() tea.Cmd {
 		s, n, err := db.RunUserQuery(ctx, sql)
 		ms := time.Since(start).Milliseconds()
 		if err != nil {
-			return queryDoneMsg{sql: sql, ms: ms, seq: seq, err: err, conn: conn}
+			return queryDoneMsg{sql: sql, ms: ms, seq: seq, err: err, conn: conn, qbufID: qid}
 		}
 		if n < 0 {
 			// SELECT or RETURNING path: returned rows are the result view.
-			return queryDoneMsg{sql: sql, sample: s, affected: -1, ms: ms, seq: seq, conn: conn}
+			return queryDoneMsg{sql: sql, sample: s, affected: -1, ms: ms, seq: seq, conn: conn, qbufID: qid}
 		}
 		tbl, isDDL := dbpkg.PreviewTarget(sql)
 		if isDDL {
-			return queryDoneMsg{sql: sql, affected: n, isDDL: true, ms: ms, seq: seq, conn: conn}
+			return queryDoneMsg{sql: sql, affected: n, isDDL: true, ms: ms, seq: seq, conn: conn, qbufID: qid}
 		}
 		if tbl == "" {
-			return queryDoneMsg{sql: sql, affected: n, ms: ms, seq: seq, conn: conn}
+			return queryDoneMsg{sql: sql, affected: n, ms: ms, seq: seq, conn: conn, qbufID: qid}
 		}
 		preview, perr := db.PageRows(ctx, tbl, 20, 0)
 		if perr != nil {
 			// Swallowed by design: affected-count is the source of truth.
-			return queryDoneMsg{sql: sql, affected: n, ms: time.Since(start).Milliseconds(), seq: seq, conn: conn}
+			return queryDoneMsg{sql: sql, affected: n, ms: time.Since(start).Milliseconds(), seq: seq, conn: conn, qbufID: qid}
 		}
-		return queryDoneMsg{sql: sql, sample: preview, affected: n, previewTable: tbl, ms: time.Since(start).Milliseconds(), seq: seq, conn: conn}
+		return queryDoneMsg{sql: sql, sample: preview, affected: n, previewTable: tbl, ms: time.Since(start).Milliseconds(), seq: seq, conn: conn, qbufID: qid}
 	}
 }
 
