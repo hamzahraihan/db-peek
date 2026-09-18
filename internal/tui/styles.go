@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -108,6 +110,54 @@ var (
 	scrollTrackStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	scrollThumbStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
 )
+
+// Footer keybinding roles: keys bright, descriptions muted, separator dim.
+// Status lines use statusStyle so result meta never blends into shortcuts.
+var (
+	footKeyStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
+	footDescStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	statusStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+)
+
+// renderKeyPairs builds a single-line "key desc • key desc" footer with
+// bright keys and muted labels. Pairs drop from the end until the line
+// fits w, so narrow terminals degrade gracefully instead of wrapping
+// (wrapping would desync row-exact mouse hit-testing).
+func renderKeyPairs(pairs [][2]string, w int) string {
+	for n := len(pairs); n > 0; n-- {
+		var b strings.Builder
+		for i := 0; i < n; i++ {
+			if i > 0 {
+				b.WriteString(dimStyle.Render(" • "))
+			}
+			b.WriteString(footKeyStyle.Render(pairs[i][0]))
+			b.WriteString(" ")
+			b.WriteString(footDescStyle.Render(pairs[i][1]))
+		}
+		if w <= 0 || lipgloss.Width(b.String()) <= w {
+			return b.String()
+		}
+	}
+	return ""
+}
+
+// renderStatus renders result meta (rows/ms/affected) in the status role,
+// truncating plain text before styling so rows never wrap.
+func renderStatus(text string, w int) string {
+	return statusStyle.Render(fitText(text, w))
+}
+
+// editorPanelBorder frames the query editor as its own panel so the
+// editing area reads separate from the tab/buffer strip above it.
+// Gold when the editor has focus, muted gray otherwise (same roles as
+// the detail pane border).
+func editorPanelBorder(focused bool) lipgloss.Style {
+	s := lipgloss.NewStyle().Border(lipgloss.RoundedBorder())
+	if focused {
+		return s.BorderForeground(lipgloss.Color("#EAB308"))
+	}
+	return s.BorderForeground(lipgloss.Color("#3A3A3A"))
+}
 
 func paneBorder(focused bool) lipgloss.Style {
 	s := lipgloss.NewStyle().Border(lipgloss.RoundedBorder())
