@@ -77,6 +77,9 @@ type Model struct {
 	queryMs           int64
 	querySeq          int
 	queryTable        dataTable
+	qbufs             []queryBuffer // query buffers; active working copy above mirrors qbufs[qcur]
+	qcur              int
+	nextQbufID        int
 	// SQL autocomplete popup (query tab, editor focused only).
 	showComplete   bool
 	completeIdx    int
@@ -180,6 +183,7 @@ func New(connStr string, store *saved.Store) Model {
 		editor:     NewEditor(),
 		erFocus:    true, queryAffected: -1,
 	}
+	m.ensureQueryBufs()
 	m.refreshConns()
 	if m.connStr == "" {
 		m.screen = screenConns
