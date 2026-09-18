@@ -174,9 +174,9 @@ func (m *Model) sizeTables() {
 		m.erPanY = 0
 	}
 	if m.tab == 3 {
-		// Query tab: title+blank+tabs+blank+editor(8)+status(2); the
-		// results grid takes the remainder. (Task 6 adjusts tab 4.)
-		qh := m.contentH() - 2 - (4 + queryEditorH + 2)
+		// Query tab: title+blank+tabs+strip(4) + padding(1) + panel(8+2)
+		// + hint/status(2); the results grid takes the remainder.
+		qh := m.contentH() - 2 - (4 + 1 + queryEditorH + 2 + 2)
 		if qh < 3 {
 			qh = 3
 		}
