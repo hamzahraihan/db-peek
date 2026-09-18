@@ -324,7 +324,7 @@ func (m Model) popupGeometry(paneW int) (top, left, boxW, nItems int) {
 	}
 	_ = footer
 	// Left edge at the cursor column, clamped into the pane.
-	curX := 3 // gutter "%2d "
+	curX := 4 // gutter " %2d "
 	if ln := m.editor.CurLine; ln >= 0 && ln < len(m.editor.Lines) {
 		rs := []rune(m.editor.Lines[ln])
 		col := m.editor.CurCol
