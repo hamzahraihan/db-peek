@@ -4,8 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"charm.land/lipgloss/v2"
 )
 
 func fixtureExplorer() Explorer {
@@ -79,10 +78,8 @@ func TestNewExplorerExpandsPublicFirst(t *testing.T) {
 }
 
 func TestExplorerRenderGoldSelection(t *testing.T) {
-	lipgloss.SetColorProfile(termenv.ANSI256)
-	defer lipgloss.SetColorProfile(termenv.Ascii)
 	e := fixtureExplorer()
-	out := e.Render(34, 20)
+	out := render256(e.Render(34, 20))
 	if !strings.Contains(out, "explorer") {
 		t.Fatalf("missing header:\n%s", out)
 	}
