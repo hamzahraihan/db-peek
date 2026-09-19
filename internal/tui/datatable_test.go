@@ -3,14 +3,10 @@ package tui
 import (
 	"strings"
 	"testing"
-
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 )
 
 func TestZebraEvenRows(t *testing.T) {
-	lipgloss.SetColorProfile(termenv.ANSI256)
-	defer lipgloss.SetColorProfile(termenv.Ascii)
+	// Zebra backgrounds are indexed colors, unaffected by downsampling.
 	var dt dataTable
 	dt.Resize(40, 8)
 	dt.setData([]string{"a"}, [][]string{{"r0"}, {"r1"}, {"r2"}, {"r3"}})
