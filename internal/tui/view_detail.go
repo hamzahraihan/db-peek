@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 func (m Model) detailView() string {
@@ -204,12 +204,18 @@ func (m Model) queryEditorView() string {
 		}
 		lines = append(lines, m.editorLineView(lineIdx, src, cells, w))
 	}
-	// Autocomplete popup overlays the editor rows as a bordered box so the
-	// 8-row budget (and queryResultsTop mouse math) never shifts.
+	// Autocomplete popup splices its bordered box into the editor rows so
+	// the 8-row budget (and queryResultsTop mouse math) never shifts and
+	// the editor text beside the box survives.
 	if m.showComplete && m.focusDetail && m.tab == 3 && m.queryFocus == 0 && len(m.completeItems) > 0 {
 		box := m.completePopupLines(w)
-		top, _, _, _ := m.popupGeometry(w)
-		copy(lines[top:], box)
+		top, left, boxW, _ := m.popupGeometry(w)
+		for r, bl := range box {
+			if top+r >= len(lines) {
+				break
+			}
+			lines[top+r] = spliceCells(lines[top+r], bl, left, boxW, w)
+		}
 	}
 	return strings.Join(lines, "\n")
 }
@@ -227,17 +233,20 @@ func (m Model) queryEditorPanel() string {
 		}
 	}
 	focused := m.focusDetail && m.tab == 3 && m.queryFocus == 0
-	return editorPanelBorder(focused).Width(w).Render(strings.Join(lines, "\n"))
+	// v2 Width is border-box: +2 keeps the outer panel at the v1 width
+	// (w inner content columns + border) so editor lines never wrap.
+	return editorPanelBorder(focused).Width(w+2).Render(strings.Join(lines, "\n"))
 }
 
 // completePopupLines renders the suggestion list as a bordered box: gold
 // border on a raised background, keywords gold, fields white, types cyan,
 // selected row in the purple selection role. Every line is padded to the
 // box width; truncation runs on plain text before styling so rows never
-// wrap and mouse hit-testing (popupGeometry) stays exact.
+// wrap and mouse hit-testing (popupGeometry) stays exact. Lines carry no
+// horizontal offset — the caller splices them into the editor at the
+// geometry's left column so surrounding editor text survives.
 func (m Model) completePopupLines(w int) []string {
-	top, left, boxW, nItems := m.popupGeometry(w)
-	_ = top
+	_, _, boxW, nItems := m.popupGeometry(w)
 	cw := boxW - 4 // padding + borders
 	if cw < 1 {
 		cw = 1
@@ -273,15 +282,7 @@ func (m Model) completePopupLines(w int) []string {
 		content = append(content, line)
 	}
 	box := completeBoxStyle.Render(strings.Join(content, "\n"))
-	lines := strings.Split(box, "\n")
-	gap := ""
-	if left > 0 {
-		gap = strings.Repeat(" ", left)
-	}
-	for i := range lines {
-		lines[i] = gap + lines[i]
-	}
-	return lines
+	return strings.Split(box, "\n")
 }
 
 // editorLineView renders one editor row: dim line number plus highlighted
