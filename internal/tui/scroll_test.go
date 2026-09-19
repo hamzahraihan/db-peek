@@ -6,9 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"charm.land/lipgloss/v2"
 )
 
 func bigExplorer() Explorer {
@@ -55,8 +53,6 @@ func TestRenderShowsWindowAndClampsPurely(t *testing.T) {
 }
 
 func TestSidebarNarrowRenderHasNoBrokenEscapes(t *testing.T) {
-	lipgloss.SetColorProfile(termenv.ANSI256)
-	defer lipgloss.SetColorProfile(termenv.Ascii)
 	e := NewExplorer("postgres", []string{"auth"})
 	e.Schemas[0].Expanded = true
 	e.Schemas[0].Tables = []TableNode{
@@ -81,8 +77,6 @@ func TestSidebarNarrowRenderHasNoBrokenEscapes(t *testing.T) {
 }
 
 func TestSidebarScrollbarOverlay(t *testing.T) {
-	lipgloss.SetColorProfile(termenv.ANSI256)
-	defer lipgloss.SetColorProfile(termenv.Ascii)
 	e := bigExplorer() // 31 rows
 	out := e.Render(32, 10)
 	lines := strings.Split(out, "\n")
@@ -110,7 +104,7 @@ func TestSidebarKeyboardScrollsViewport(t *testing.T) {
 	m := browseModel(t)
 	m.height = 12 // tree viewport = 12-3-2-4 = 3 rows; fixture has 5 rows
 	m.loading = false
-	down := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}
+	down := testKey("j")
 	for i := 0; i < 4; i++ {
 		u, _ := m.Update(down)
 		m = u.(Model)
@@ -128,7 +122,7 @@ func TestSidebarWheelScrollsViewport(t *testing.T) {
 	m.height = 12
 	m.loading = false
 	m.focusDetail = false
-	u, _ := m.Update(tea.MouseMsg{Type: tea.MouseWheelDown})
+	u, _ := m.Update(testWheelDown())
 	m = u.(Model)
 	if m.explorer.Offset == 0 && m.explorer.Cursor >= m.sidebarTreeH() {
 		t.Fatalf("wheel must pull viewport along: cursor=%d offset=%d treeH=%d",
@@ -143,7 +137,7 @@ func TestSidebarClickUsesOffset(t *testing.T) {
 	m.focusDetail = false
 	m.explorer.Offset = 2
 	// First visible tree row (y=5) is fixture row 2 (col id → previews orders).
-	u, _ := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 5})
+	u, _ := m.Update(testClick(2, 5))
 	m = u.(Model)
 	if m.explorer.Cursor != 2 {
 		t.Fatalf("want cursor 2, got %d", m.explorer.Cursor)
@@ -161,7 +155,7 @@ func TestSidebarHoverUsesOffset(t *testing.T) {
 	m.height = 12
 	m.loading = false
 	m.explorer.Offset = 2
-	u, _ := m.Update(tea.MouseMsg{Type: tea.MouseMotion, X: 2, Y: 6})
+	u, _ := m.Update(testMotion(2, 6))
 	m = u.(Model)
 	if m.explorer.Cursor != 3 {
 		t.Fatalf("want cursor 3, got %d", m.explorer.Cursor)
