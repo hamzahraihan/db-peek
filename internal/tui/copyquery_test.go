@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 var errTestClipboard = errors.New("no clipboard")
@@ -50,7 +48,7 @@ func TestCtrlSCopiesEditorText(t *testing.T) {	var got string
 	m := queryTabModel()
 	m.editor.SetText("SELECT * FROM orders JOIN customers ON 1=1")
 	m.editor.CurLine, m.editor.CurCol = 0, 10
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	u, _ := m.Update(testKey("ctrl+s"))
 	m = u.(Model)
 	if !strings.Contains(got, "SELECT * FROM orders") {
 		t.Fatalf("clipboard must receive editor text, got %q", got)
@@ -90,7 +88,7 @@ func TestCopySelectionOnly(t *testing.T) {
 	m.editor.CurLine = 0
 	m.editor.ExtendSelectionTo(1)
 	m.err = "boom"
-	u, _ := m.queryKeys(tea.KeyMsg{Type: tea.KeyCtrlS}, "ctrl+s")
+	u, _ := m.queryKeys(testKey("ctrl+s"), "ctrl+s")
 	m = u.(Model)
 	if got != "SELECT 1\nFROM foo" {
 		t.Fatalf("selection copy must exclude dump header and error, got %q", got)
