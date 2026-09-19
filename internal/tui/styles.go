@@ -3,7 +3,8 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // All lipgloss styling lives here so screens share one palette.
@@ -94,6 +95,42 @@ func fitText(s string, w int) string {
 	return string(runes[:i]) + "..."
 }
 
+// spliceCells overlays seg (segW cells wide) onto base at cell offset left,
+// preserving base content — including its ANSI styling — on both sides of
+// the overlay rect. The result is exactly totalW cells wide (space-padded
+// or truncated). All slicing is ANSI- and width-safe via x/ansi, so popup
+// compositing never destroys the UI behind it.
+func spliceCells(base, seg string, left, segW, totalW int) string {
+	if left < 0 {
+		left = 0
+	}
+	if segW < 0 {
+		segW = 0
+	}
+	if totalW < 0 {
+		totalW = 0
+	}
+	leftPart := ansi.Cut(base, 0, left)
+	if lw := lipgloss.Width(leftPart); lw < left {
+		leftPart += strings.Repeat(" ", left-lw)
+	}
+	mid := ansi.Truncate(seg, segW, "")
+	if mw := lipgloss.Width(mid); mw < segW {
+		mid += strings.Repeat(" ", segW-mw)
+	}
+	rightPart := ""
+	if from := left + segW; from < totalW {
+		rightPart = ansi.Cut(base, from, totalW)
+	}
+	out := leftPart + mid + rightPart
+	if ow := lipgloss.Width(out); ow < totalW {
+		out += strings.Repeat(" ", totalW-ow)
+	} else if ow > totalW {
+		out = ansi.Truncate(out, totalW, "")
+	}
+	return out
+}
+
 // Explorer styles for the sidebar tree (Task 3). Gold selection #CA8A04,
 // cyan-dim column types, muted counts, bright connection header.
 var (
@@ -117,6 +154,16 @@ var (
 	footKeyStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 	footDescStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	statusStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+)
+
+// Which-key overlay roles: yellow section headers, cyan key combos,
+// muted gray action descriptions. Distinct from footer roles so the
+// overlay reads as a floating reference card, not a status line.
+var (
+	helpHeaderStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#EAB308"))
+	helpKeyStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#67E8F9"))
+	helpDescStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	helpTitleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 )
 
 // renderKeyPairs builds a single-line "key desc • key desc" footer with
