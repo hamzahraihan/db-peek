@@ -4,9 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestShiftUpExtendsAndCtrlDDeletesLine(t *testing.T) {
@@ -15,12 +13,12 @@ func TestShiftUpExtendsAndCtrlDDeletesLine(t *testing.T) {
 	m.editor.CurLine, m.editor.CurCol = 2, 0
 	m.refreshCompletion()
 	m.showComplete = false
-	u, _ := m.queryKeys(tea.KeyMsg{Type: tea.KeyShiftUp}, "shift+up")
+	u, _ := m.queryKeys(testKey("shift+up"), "shift+up")
 	m = u.(Model)
 	if _, _, active := m.editor.SelectedRange(); !active {
 		t.Fatal("shift+up must activate selection")
 	}
-	u, _ = m.queryKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")}, "x")
+	u, _ = m.queryKeys(testKey("x"), "x")
 	m = u.(Model)
 	if _, _, active := m.editor.SelectedRange(); active {
 		t.Fatal("plain typing must clear selection")
@@ -28,7 +26,7 @@ func TestShiftUpExtendsAndCtrlDDeletesLine(t *testing.T) {
 	m.editor.SetText("SELECT 1\nFROM foo")
 	m.editor.CurLine = 0
 	m.editor.ClearSelection()
-	u, _ = m.queryKeys(tea.KeyMsg{Type: tea.KeyCtrlD}, "ctrl+d")
+	u, _ = m.queryKeys(testKey("ctrl+d"), "ctrl+d")
 	m = u.(Model)
 	if got := m.editor.Text(); got != "FROM foo" {
 		t.Fatalf("ctrl+d on single line, got %q", got)
@@ -40,12 +38,12 @@ func TestCommentToggleBothKeyStrings(t *testing.T) {
 		m := queryTabModel()
 		m.editor.SetText("SELECT 1")
 		m.showComplete = false
-		u, _ := m.queryKeys(tea.KeyMsg{Type: tea.KeyRunes}, key)
+		u, _ := m.queryKeys(tea.KeyPressMsg{}, key)
 		m = u.(Model)
 		if got := m.editor.Text(); got != "-- SELECT 1" {
 			t.Fatalf("%s: want commented, got %q", key, got)
 		}
-		u, _ = m.queryKeys(tea.KeyMsg{Type: tea.KeyRunes}, key)
+		u, _ = m.queryKeys(tea.KeyPressMsg{}, key)
 		m = u.(Model)
 		if got := m.editor.Text(); got != "SELECT 1" {
 			t.Fatalf("%s: want uncommented, got %q", key, got)
@@ -60,12 +58,12 @@ func TestShiftClickExtendsBlock(t *testing.T) {
 	m.resizeBrowse()
 	// Plain click line 0 (editor-relative): queryEditorTop + 0.
 	// X stays left of the autocomplete popup so clicks hit editor rows.
-	u, _ := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: m.paneX() + 3, Y: queryEditorTop()})
+	u, _ := m.Update(testClick(m.paneX()+3, queryEditorTop()))
 	m = u.(Model)
 	if m.editor.CurLine != 0 {
 		t.Fatalf("plain click line 0, got %d", m.editor.CurLine)
 	}
-	u, _ = m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: m.paneX() + 3, Y: queryEditorTop() + 2, Shift: true})
+	u, _ = m.Update(	tea.MouseClickMsg{X: m.paneX() + 3, Y: queryEditorTop() + 2, Button: tea.MouseLeft, Mod: tea.ModShift})
 	m = u.(Model)
 	lo, hi, active := m.editor.SelectedRange()
 	if !active || lo != 0 || hi != 2 {
@@ -74,12 +72,10 @@ func TestShiftClickExtendsBlock(t *testing.T) {
 }
 
 func TestSelectedLinesRenderHighlighted(t *testing.T) {
-	// Styled output needs a color profile: under the default Ascii
-	// profile lipgloss strips all styling (same precedent as
-	// TestPopupBoxChromeAndBudget), so selected and plain renders
-	// would compare equal regardless of implementation.
-	lipgloss.SetColorProfile(termenv.ANSI256)
-	defer lipgloss.SetColorProfile(termenv.Ascii)
+	// Styled output is always ANSI in lipgloss v2 (Render emits
+	// full-fidelity codes; downsampling happens at print time), so
+	// selected and plain renders compare unequal without any profile
+	// setup.
 	m := queryTabModel()
 	m.editor.SetText("SELECT 1\nFROM foo")
 	m.editor.CurLine = 0
