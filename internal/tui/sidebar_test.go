@@ -5,10 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"charm.land/lipgloss/v2"
 
 	"db-peek/internal/db"
 	"db-peek/internal/saved"
@@ -81,7 +78,7 @@ func TestExplorerClickPreviews(t *testing.T) {
 	m.explorer = fixtureExplorer()
 	m.loading = false
 	// Bordered layout: first tree row at explorerFirstRow=5, orders idx1 → y=6.
-	u, cmd := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 6})
+	u, cmd := m.Update(testClick(2, 6))
 	m = u.(Model)
 	if cmd == nil || m.table != "orders" {
 		t.Fatalf("want orders previewed, got %q", m.table)
@@ -93,7 +90,7 @@ func TestSidebarClickPreviewsInDetail(t *testing.T) {
 	// Fixture rows: 0=schema public, 1=orders, 2=col id, 3=col status,
 	// 4=customers. First tree row lands at explorerFirstRow=5, so
 	// orders sits at y=6 and customers at y=9.
-	u, cmd := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 6})
+	u, cmd := m.Update(testClick(2, 6))
 	m = u.(Model)
 	if cmd == nil || m.table != "orders" || m.focusDetail || m.detailSeq != 1 {
 		t.Fatalf("want orders previewed seq 1 staying in sidebar, got %q seq %d focus=%v", m.table, m.detailSeq, m.focusDetail)
@@ -104,7 +101,7 @@ func TestSidebarClickPreviewsInDetail(t *testing.T) {
 	// NOTE: click 1 toggled orders collapsed, so customers slid from
 	// idx 4 to idx 2 (y=7).
 	m.loading = false
-	u2, cmd2 := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 7})
+	u2, cmd2 := m.Update(testClick(2, 7))
 	m = u2.(Model)
 	if cmd2 == nil || m.table != "customers" || m.detailSeq != 2 {
 		t.Fatalf("want customers re-selected seq 2, got %q seq %d", m.table, m.detailSeq)
@@ -122,7 +119,7 @@ func TestDetailClickUsesPaneOffset(t *testing.T) {
 	// Pane starts at x = sidebarW+1; clicking inside the pane selects a grid row.
 	x := m.paneX() + 2
 	y := m.tabStripRow() + 2 + 2 // tabs + blank + first data row
-	u, _ := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x, Y: y})
+	u, _ := m.Update(testClick(x, y))
 	m = u.(Model)
 	if m.colTable.Cursor() != 0 {
 		t.Fatalf("want cursor 0, got %d", m.colTable.Cursor())
@@ -154,7 +151,7 @@ func TestBrowseViewFitsTerminal(t *testing.T) {
 	m.cols = []db.Column{{Name: "id"}}
 	m.buildTables()
 	m.sizeTables()
-	v := m.View()
+	v := m.View().Content
 	for i, ln := range strings.Split(v, "\n") {
 		if lipgloss.Width(ln) > m.width {
 			t.Fatalf("line %d wraps at width %d: %q", i, m.width, ln)
@@ -200,7 +197,7 @@ func TestFilteredMouseChrome(t *testing.T) {
 func TestSidebarFilterTypingFiltersTables(t *testing.T) {
 	m := browseModel(t)
 	// "/" opens the filter input.
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	u, _ := m.Update(testKey("/"))
 	m = u.(Model)
 	if !m.filtering {
 		t.Fatal("pressing / must open the sidebar filter input")
@@ -208,7 +205,7 @@ func TestSidebarFilterTypingFiltersTables(t *testing.T) {
 	// Typing filters live; single-letter keys must not trigger actions
 	// (q would quit, c would disconnect, r would reload).
 	for _, r := range "cust" {
-		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		u, _ = m.Update(testKey(string(r)))
 		m = u.(Model)
 	}
 	if m.screen != screenBrowse {
@@ -221,7 +218,7 @@ func TestSidebarFilterTypingFiltersTables(t *testing.T) {
 		t.Fatalf("want 2 visible rows when filtered, got %d", n)
 	}
 	// enter applies the filter and exits, keeping the text.
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	u, _ = m.Update(testKey("enter"))
 	m = u.(Model)
 	if m.filtering || m.explorer.Filter != "cust" {
 		t.Fatalf("enter must exit filtering keeping filter, filtering=%v filter=%q", m.filtering, m.explorer.Filter)
@@ -230,11 +227,11 @@ func TestSidebarFilterTypingFiltersTables(t *testing.T) {
 
 func TestSidebarFilterEscClears(t *testing.T) {
 	m := browseModel(t)
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	u, _ := m.Update(testKey("/"))
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	u, _ = m.Update(testKey("x"))
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	u, _ = m.Update(testKey("esc"))
 	m = u.(Model)
 	if m.filtering || m.explorer.Filter != "" {
 		t.Fatalf("esc must exit and clear filter, filtering=%v filter=%q", m.filtering, m.explorer.Filter)
@@ -246,9 +243,9 @@ func TestSidebarFilterEscClears(t *testing.T) {
 
 func TestSidebarFilterQDoesNotQuit(t *testing.T) {
 	m := browseModel(t)
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	u, _ := m.Update(testKey("/"))
 	m = u.(Model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	u, _ = m.Update(testKey("q"))
 	m = u.(Model)
 	if m.screen != screenBrowse {
 		t.Fatalf("typing q in filter must not quit, got screen %d", m.screen)
@@ -257,7 +254,7 @@ func TestSidebarFilterQDoesNotQuit(t *testing.T) {
 		t.Fatalf("want filter %q, got %q", "q", m.explorer.Filter)
 	}
 	// "?" must type into the filter, not open the help overlay.
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	u, _ = m.Update(testKey("?"))
 	m = u.(Model)
 	if m.showHelp {
 		t.Fatal("? in filter must not open help")
@@ -272,7 +269,7 @@ func TestExplorerConnRowClickIsNoop(t *testing.T) {
 	// from × are no-ops.
 	m := browseModel(t)
 	m.loading = false
-	u, cmd := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 3})
+	u, cmd := m.Update(testClick(2, 3))
 	m = u.(Model)
 	if cmd != nil || m.table != "" || m.screen != screenBrowse {
 		t.Fatalf("conn click must be noop, got table=%q screen=%d cmd=%v", m.table, m.screen, cmd)
@@ -284,7 +281,7 @@ func TestExplorerConnRowClickIsNoop(t *testing.T) {
 	m2 := browseModel(t)
 	m2.loading = false
 	m2.db = nil
-	u, _ = m2.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: m2.sidebarW - 2, Y: 3})
+	u, _ = m2.Update(testClick(m2.sidebarW-2, 3))
 	m2 = u.(Model)
 	if m2.screen != screenConns {
 		t.Fatalf("× click must disconnect, got screen=%d", m2.screen)
@@ -299,7 +296,7 @@ func TestColumnEnterPreviewsParent(t *testing.T) {
 	if r, ok := m.explorer.RowAt(m.explorer.Cursor); !ok || r.Kind != RowColumn {
 		t.Fatalf("fixture setup: want column row at cursor 2, got %+v ok=%v", r, ok)
 	}
-	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	u, cmd := m.Update(testKey("enter"))
 	m = u.(Model)
 	if m.table != "orders" || cmd == nil {
 		t.Fatalf("column enter must preview parent table, got %q cmd=%v", m.table, cmd)
@@ -322,7 +319,7 @@ func TestColumnsErrCollapsesTable(t *testing.T) {
 
 func TestSidebarFooterAndEmptyStates(t *testing.T) {
 	m := browseModel(t)
-	v := m.View()
+	v := m.View().Content
 	if !strings.Contains(v, "1 schema") {
 		t.Fatalf("want gold footer '1 schema', got:\n%s", v)
 	}
@@ -333,23 +330,23 @@ func TestSidebarFooterAndEmptyStates(t *testing.T) {
 	m2.explorer.Schemas[0].Tables = []TableNode{{Schema: "public", Name: "t", CountOK: true}}
 	m2.explorer.Schemas[1].Expanded = true
 	m2.resizeBrowse()
-	if v := m2.View(); !strings.Contains(v, "(empty)") || !strings.Contains(v, "2 schemas") {
+	if v := m2.View().Content; !strings.Contains(v, "(empty)") || !strings.Contains(v, "2 schemas") {
 		t.Fatalf("want (empty) + '2 schemas', got:\n%s", v)
 	}
 	// Zero tables overall renders (no tables).
 	m3 := browseModel(t)
 	m3.explorer = NewExplorer("shop", []string{"public"})
 	m3.resizeBrowse()
-	if v := m3.View(); !strings.Contains(v, "(no tables)") {
+	if v := m3.View().Content; !strings.Contains(v, "(no tables)") {
 		t.Fatalf("want (no tables), got:\n%s", v)
 	}
 }
 
 func TestDetailDimFollowsFocus(t *testing.T) {
-	// Force ANSI output: without a TTY lipgloss strips all styling,
-	// which would make focused and dimmed renders identical.
-	lipgloss.SetColorProfile(termenv.ANSI256)
-	defer lipgloss.SetColorProfile(termenv.Ascii)
+	// lipgloss v2 always renders full styling (no TTY-dependent
+	// stripping), so focused and dimmed renders differ unconditionally.
+	// The asserted backgrounds are indexed colors, unaffected by
+	// downsampling.
 	newDetail := func(focusDetail bool) Model {
 		m := browseModel(t)
 		m.focusDetail = focusDetail
@@ -378,7 +375,7 @@ func TestDetailDimFollowsFocus(t *testing.T) {
 
 func TestBrowseViewSidebarFitsWidth(t *testing.T) {
 	m := browseModel(t)
-	v := m.View()
+	v := m.View().Content
 	lines := strings.Split(v, "\n")
 	if !strings.Contains(v, "╭") {
 		t.Fatalf("bordered layout must draw box corners:\n%s", v)
@@ -409,24 +406,24 @@ func TestPaneClickSwitchesFocus(t *testing.T) {
 	// Click inside detail box grid area focuses detail.
 	x := m.paneX() + 2
 	y := 6 + 2 + 2 // detailTableTop + header(2) + first data row
-	u, _ := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x, Y: y})
+	u, _ := m.Update(testClick(x, y))
 	m = u.(Model)
 	if !m.focusDetail {
 		t.Fatal("click inside detail must focus detail")
 	}
 	// Click inside sidebar box focuses sidebar.
-	u, _ = m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 5})
+	u, _ = m.Update(testClick(2, 5))
 	m = u.(Model)
 	if m.focusDetail {
 		t.Fatal("click inside sidebar must focus sidebar")
 	}
 	// Border clicks select nothing but must still switch the pane.
-	u, _ = m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: m.paneX(), Y: 10})
+	u, _ = m.Update(testClick(m.paneX(), 10))
 	m = u.(Model)
 	if !m.focusDetail {
 		t.Fatal("click on detail border must focus detail")
 	}
-	u, _ = m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 0, Y: 10})
+	u, _ = m.Update(testClick(0, 10))
 	m = u.(Model)
 	if m.focusDetail {
 		t.Fatal("click on sidebar border must focus sidebar")
@@ -454,7 +451,7 @@ func TestQueryEditorQuestionMarkInserts(t *testing.T) {
 	m.focusDetail = true
 	m.tab = 3
 	m.queryFocus = 0
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	u, _ := m.Update(testKey("?"))
 	m = u.(Model)
 	if !strings.Contains(m.editor.Text(), "?") {
 		t.Fatalf("typing ? in editor must insert text, got %q", m.editor.Text())
@@ -493,7 +490,7 @@ func TestQueryWriteShowsAffected(t *testing.T) {
 	if m.querySample != nil || m.queryAffected != 2 {
 		t.Fatalf("write reply must clear grid and store count, got %+v", m.querySample)
 	}
-	if v := m.View(); !strings.Contains(v, "2 rows affected") {
+	if v := m.View().Content; !strings.Contains(v, "2 rows affected") {
 		t.Fatalf("view must show rows affected, got:\n%s", v)
 	}
 }
@@ -534,12 +531,12 @@ func TestQueryWritePreviewStaleDropped(t *testing.T) {
 }
 
 func TestFocusedBorderGold(t *testing.T) {
-	lipgloss.SetColorProfile(termenv.ANSI256)
-	defer lipgloss.SetColorProfile(termenv.Ascii)
 	m := browseModel(t)
 	m.loading = false
 	m.focusDetail = true
-	v := m.View()
+	// #EAB308 is hex: downsample full-fidelity v2 output to ANSI256
+	// before asserting on the quantized code.
+	v := render256(m.View().Content)
 	// #EAB308 quantizes to 178 under ANSI256 in this lipgloss version
 	// (brief said 220); assert on the border corner to distinguish from
 	// the gold explorer title text.
@@ -562,7 +559,7 @@ func TestQueryPreviewFooterNeedsTable(t *testing.T) {
 	prev := &db.Sample{Columns: []string{"id"}, Rows: [][]string{{"1"}, {"2"}}}
 	u, _ := m.Update(queryDoneMsg{sql: "insert", seq: 8, sample: prev, affected: 2, previewTable: "users", ms: 6})
 	m = u.(Model)
-	if v := m.View(); !strings.Contains(v, "2 rows affected • preview of users") {
+	if v := m.View().Content; !strings.Contains(v, "2 rows affected • preview of users") {
 		t.Fatalf("plural preview footer missing, got:\n%s", v)
 	}
 }
