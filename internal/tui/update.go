@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	dbpkg "db-peek/internal/db"
 )
@@ -400,11 +400,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = ""
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 
-	case tea.MouseMsg:
-		return m.handleMouse(msg)
+	case tea.MouseClickMsg:
+		return m.handleMouseClick(msg)
+	case tea.MouseWheelMsg:
+		// v2 reports wheel direction in Button; release events arrive
+		// as MouseReleaseMsg and are ignored (as in v1).
+		if msg.Button == tea.MouseWheelUp {
+			return m.wheel(-3)
+		}
+		return m.wheel(3)
+	case tea.MouseMotionMsg:
+		return m.hover(msg.X, msg.Y)
 	}
 	// Route updates to the focused component.
 	switch m.screen {
@@ -423,7 +432,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
-func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	if key == "ctrl+c" {
 		if m.db != nil {
@@ -568,7 +577,7 @@ func (m *Model) disconnect() {
 
 // sidebarKeys handles keys on the browse sidebar (explorer is the source
 // of truth). While filtering, every keystroke belongs to the filter input.
-func (m Model) sidebarKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+func (m Model) sidebarKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 	if m.filtering {
 		return m.filterKeys(msg, key)
 	}
@@ -636,7 +645,7 @@ func (m Model) sidebarKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 // Every keystroke belongs to the filter: single-letter sidebar actions
 // (r/c/...) must not hijack typing. esc exits and clears, enter applies
 // the text and exits, up/down navigate without exiting.
-func (m Model) filterKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+func (m Model) filterKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc":
 		m.filtering = false
@@ -666,7 +675,7 @@ func (m Model) filterKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 // detailKey handles keys on the schema/indexes/rows/query/er tabs.
 // Tabs 3 (query) and 4 (er) route to their own handlers first so editing
 // runes never trigger the schema/indexes/rows bindings below.
-func (m Model) detailKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+func (m Model) detailKey(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 	if m.tab == 3 {
 		return m.queryKeys(msg, key)
 	}
@@ -754,7 +763,7 @@ func (m Model) detailKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 // queryKeys handles keys on the query tab (tab 3). With the editor
 // focused every typed rune inserts; esc steps focus editor → results →
 // sidebar. With results focused the grid moves and 1-5/r switch/rerun.
-func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 	if m.queryFocus == 0 {
 		// Autocomplete popup takes priority: Tab/Enter accept, Esc
 		// dismisses (a second Esc then drops to results), Up/Down move
@@ -938,11 +947,13 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Every rune inserts while editing, including "?" (Postgres JSON
-		// operators need it). Task 7's "?"-overlay must intercept "?"
-		// before detailKey routing except when the editor is focused.
-		if msg.Type == tea.KeyRunes {
+		// operators need it) and " " (v2 reports it as "space" via
+		// String(), but Text still carries the printable characters).
+		// Task 7's "?"-overlay must intercept "?" before detailKey
+		// routing except when the editor is focused.
+		if msg.Text != "" {
 			m.editor.ClearSelection()
-			for _, r := range msg.Runes {
+			for _, r := range msg.Text {
 				m.editor.Insert(r)
 			}
 			m.clampEditorScroll()
@@ -1032,7 +1043,7 @@ func (m Model) queryKeys(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
 // default (f toggles the full schema), pan via arrows/WASD, n/p to cycle
 // visible boxes, enter to recenter on the selection (stays on ER), r to
 // reload the schema.
-func (m Model) erKeys(_ tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+func (m Model) erKeys(_ tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc", "backspace":
 		m.focusDetail = false
