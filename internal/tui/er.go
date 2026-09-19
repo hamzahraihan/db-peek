@@ -9,7 +9,7 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // erSpan is one clickable neighbor name within the rendered diagram:
