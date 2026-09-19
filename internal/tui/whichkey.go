@@ -1,14 +1,16 @@
 package tui
 
 // Which-key help overlay: a centered registry of every handled key,
-// grouped by context header in registry order. helpRect is shared by
-// render (helpView) and mouse hit-testing so the two can never drift.
+// grouped into five canonical sections (Global, Sidebar, Query Editor,
+// Results, Connections) with one 2-column key/desc table per section,
+// flowed into two side-by-side columns to stay compact. helpRect is
+// shared by render (helpView) and mouse hit-testing so the two can
+// never drift.
 
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
+	"charm.land/lipgloss/v2"
 )
 
 // KeyBinding is one handled key (slash-separated aliases) with its
@@ -57,104 +59,221 @@ var keyRegistry = []KeyBinding{
 	{"enter", "connect", "Connections"},
 }
 
-// helpGroups folds the registry into context groups, preserving the
-// registry's first-occurrence order.
-func helpGroups() []struct {
-	header string
-	cells  []string
-} {
-	var groups []struct {
-		header string
-		cells  []string
+// helpContextOrder is the canonical display order. Every binding folds
+// into exactly these five sections so headers never repeat.
+var helpContextOrder = []string{"Global", "Sidebar", "Query Editor", "Results", "Connections"}
+
+// normalizeHelpContext maps legacy registry tokens (Detail, Query-results,
+// ER, Query editor) onto the five canonical sections.
+func normalizeHelpContext(tok string) string {
+	switch strings.ToLower(strings.TrimSpace(tok)) {
+	case "global":
+		return "Global"
+	case "sidebar":
+		return "Sidebar"
+	case "query editor":
+		return "Query Editor"
+	case "detail", "query-results", "er":
+		return "Results"
+	case "connections":
+		return "Connections"
+	default:
+		return strings.TrimSpace(tok)
 	}
+}
+
+// helpGroup is one canonical section with its (key, action) rows in
+// registry order.
+type helpGroup struct {
+	header string
+	rows   []KeyBinding
+}
+
+// helpGroups folds the registry into canonical context groups, preserving
+// the registry's first-occurrence row order within each group. A binding
+// with comma-separated contexts appears once under each mapped section;
+// each header appears at most once, in helpContextOrder.
+func helpGroups() []helpGroup {
+	byHeader := map[string]*helpGroup{}
+	for _, h := range helpContextOrder {
+		byHeader[h] = &helpGroup{header: h}
+	}
+	seen := map[string]map[string]bool{} // header -> "key\x00desc" set
 	for _, b := range keyRegistry {
-		if len(groups) == 0 || groups[len(groups)-1].header != b.Contexts {
-			groups = append(groups, struct {
-				header string
-				cells  []string
-			}{header: b.Contexts})
+		for _, tok := range strings.Split(b.Contexts, ",") {
+			h := normalizeHelpContext(tok)
+			g, ok := byHeader[h]
+			if !ok {
+				g = &helpGroup{header: h}
+				byHeader[h] = g
+			}
+			key := b.Key + "\x00" + b.Desc
+			if seen[h] == nil {
+				seen[h] = map[string]bool{}
+			}
+			if seen[h][key] {
+				continue
+			}
+			seen[h][key] = true
+			g.rows = append(g.rows, KeyBinding{Key: b.Key, Desc: b.Desc})
 		}
-		groups[len(groups)-1].cells = append(groups[len(groups)-1].cells, b.Key+"  "+b.Desc)
+	}
+	var groups []helpGroup
+	for _, h := range helpContextOrder {
+		if len(byHeader[h].rows) > 0 {
+			groups = append(groups, *byHeader[h])
+		}
+	}
+	// Any non-canonical headers (future contexts) append in first-seen order.
+	for h, g := range byHeader {
+		known := false
+		for _, ch := range helpContextOrder {
+			if ch == h {
+				known = true
+				break
+			}
+		}
+		if !known && len(g.rows) > 0 {
+			groups = append(groups, *g)
+		}
 	}
 	return groups
 }
 
-// helpContentLines renders the overlay body: a title plus one context
-// header per group with its `key desc` pairs flowed into up to 3
-// columns. Content width is capped to the terminal so the box never
-// exceeds it; fewer columns are used when 3 would overflow.
+// helpContentLines renders the overlay body: one aligned 2-column table
+// (yellow header, cyan keys padded to the section's widest key, muted
+// descriptions) per canonical section. Sections flow into two side-by-side
+// columns — split at the prefix boundary that best balances heights — so
+// the box stays compact and the UI behind it remains visible. On narrow
+// terminals it falls back to a single stacked column. A title anchors the
+// top and a `?/esc` footer anchors the bottom; content width is capped to
+// the terminal so the box never overflows.
 func (m Model) helpContentLines() []string {
 	maxW := m.width - 6 // border + margin
 	if m.width <= 0 {
 		maxW = 1 << 30 // unknown width: no cap
 	}
-	var lines []string
-	lines = append(lines, titleStyle.Render("keys")+dimStyle.Render("  ?/esc close"))
-	for _, g := range helpGroups() {
-		lines = append(lines, explorerTitle.Render(g.header))
-		cols := 3
-		for ; cols > 1; cols-- {
-			if helpRowW(g.cells, cols) <= maxW {
-				break
+	groups := helpGroups()
+	keyWs := make([]int, len(groups))
+	for gi, g := range groups {
+		for _, r := range g.rows {
+			if w := lipgloss.Width(r.Key); w > keyWs[gi] {
+				keyWs[gi] = w
 			}
-		}
-		for i := 0; i < len(g.cells); i += cols {
-			end := i + cols
-			if end > len(g.cells) {
-				end = len(g.cells)
-			}
-			lines = append(lines, helpRow(g.cells[i:end], cols, maxW))
 		}
 	}
+	// Section heights (header + rows); pick the prefix split that best
+	// balances the two columns.
+	heights := make([]int, len(groups))
+	total := 0
+	for i, g := range groups {
+		heights[i] = 1 + len(g.rows)
+		total += heights[i]
+	}
+	split, best := 0, total
+	for k := 1; k < len(groups); k++ {
+		left := 0
+		for _, h := range heights[:k] {
+			left += h
+		}
+		if taller := max(left, total-left); taller < best {
+			best, split = taller, k
+		}
+	}
+	lines := []string{helpTitleStyle.Render("Keybindings")}
+	renderCol := func(list []int, budget int) (blk []string, w int) {
+		for _, gi := range list {
+			blk = append(blk, helpHeaderStyle.Render(groups[gi].header))
+			if hw := lipgloss.Width(groups[gi].header); hw > w {
+				w = hw
+			}
+			for _, r := range groups[gi].rows {
+				row := helpPairRow(r.Key, r.Desc, keyWs[gi], budget)
+				blk = append(blk, row)
+				if rw := lipgloss.Width(row); rw > w {
+					w = rw
+				}
+			}
+		}
+		return blk, w
+	}
+	if split > 0 {
+		const gutter = 4
+		budget := (maxW - gutter) / 2
+		if budget > 0 {
+			idxA, idxB := make([]int, 0, split), make([]int, 0, len(groups)-split)
+			for i := range groups {
+				if i < split {
+					idxA = append(idxA, i)
+				} else {
+					idxB = append(idxB, i)
+				}
+			}
+			colA, wA := renderCol(idxA, budget)
+			colB, wB := renderCol(idxB, budget)
+			if wA+wB+gutter <= maxW {
+				for i := 0; i < max(len(colA), len(colB)); i++ {
+					a, b := "", ""
+					if i < len(colA) {
+						a = colA[i]
+					}
+					if i < len(colB) {
+						b = colB[i]
+					}
+					if aw := lipgloss.Width(a); aw < wA {
+						a += strings.Repeat(" ", wA-aw)
+					}
+					if b != "" {
+						if bw := lipgloss.Width(b); bw < wB {
+							b += strings.Repeat(" ", wB-bw)
+						}
+					}
+					if b == "" {
+						lines = append(lines, a)
+					} else {
+						lines = append(lines, a+strings.Repeat(" ", gutter)+b)
+					}
+				}
+				lines = append(lines, helpFooter(maxW)...)
+				return lines
+			}
+		}
+	}
+	// Narrow fallback (or a single section): one stacked column.
+	idx := make([]int, 0, len(groups))
+	for i := range groups {
+		idx = append(idx, i)
+	}
+	col, _ := renderCol(idx, maxW)
+	lines = append(lines, col...)
+	lines = append(lines, helpFooter(maxW)...)
 	return lines
 }
 
-// helpRowW is the display width of cells flowed into cols columns
-// (3-space gutters), used to pick the column count that fits.
-func helpRowW(cells []string, cols int) int {
-	w := 0
-	for i := 0; i < len(cells); i += cols {
-		end := i + cols
-		if end > len(cells) {
-			end = len(cells)
-		}
-		cw := 0
-		for _, c := range cells[i:end] {
-			if ww := lipgloss.Width(c); ww > cw {
-				cw = ww
-			}
-		}
-		rowW := cw*len(cells[i:end]) + 3*(len(cells[i:end])-1)
-		if rowW > w {
-			w = rowW
-		}
+// helpFooter renders the anchored dismissal hint with a separator above it.
+func helpFooter(maxW int) []string {
+	sepW := lipgloss.Width("? / esc to close")
+	if maxW > 0 && sepW > maxW {
+		sepW = maxW
 	}
-	return w
+	return []string{
+		dimStyle.Render(strings.Repeat("─", sepW)),
+		dimStyle.Render("? / esc to close"),
+	}
 }
 
-// helpRow pads one row of cells to equal column width so the 3-column
-// flow stays aligned.
-func helpRow(cells []string, cols, maxW int) string {
-	cw := 0
-	for _, c := range cells {
-		if ww := lipgloss.Width(c); ww > cw {
-			cw = ww
-		}
+// helpPairRow renders one 2-column row: cyan key padded to keyW cells,
+// two-space gutter, muted description (truncated to fit maxW).
+func helpPairRow(key, desc string, keyW, maxW int) string {
+	padded := key + strings.Repeat(" ", max(0, keyW-lipgloss.Width(key)))
+	descW := maxW - keyW - 2
+	if descW < 0 {
+		descW = 0
 	}
-	if total := cw*cols + 3*(cols-1); total > maxW && maxW > 0 {
-		cw = (maxW - 3*(cols-1)) / cols
-		if cw < 1 {
-			cw = 1
-		}
+	if maxW < 1<<30 && lipgloss.Width(desc) > descW {
+		desc = fitText(desc, descW)
 	}
-	parts := make([]string, len(cells))
-	for i, c := range cells {
-		for lipgloss.Width(c) < cw {
-			c += " "
-		}
-		parts[i] = c
-	}
-	return strings.Join(parts, "   ")
+	return helpKeyStyle.Render(padded) + "  " + helpDescStyle.Render(desc)
 }
 
 // helpBox renders the overlay box: content in a rounded gold border.
@@ -193,9 +312,9 @@ func (m Model) helpRect() (x, y, w, h int) {
 }
 
 // helpView renders the current screen with the help overlay centered on
-// top. Overlay lines replace base lines row-for-row (left-padded to the
-// centered x, truncated to the terminal width) so the width can never
-// exceed the terminal.
+// top. Each overlay line is spliced into its base line at the centered
+// rect, so the UI beside the box — including its styling — survives; only
+// the cells the box covers are replaced. Widths never exceed the terminal.
 func (m Model) helpView() string {
 	var base string
 	switch m.screen {
@@ -214,15 +333,7 @@ func (m Model) helpView() string {
 		termW = w
 	}
 	for i := 0; i < h && i < len(boxLines) && y+i < len(baseLines); i++ {
-		row := ansi.Truncate(boxLines[i], w, "")
-		if rw := lipgloss.Width(row); x+rw > termW {
-			row = ansi.Truncate(row, termW-x, "")
-		}
-		row = strings.Repeat(" ", x) + row
-		if lw := lipgloss.Width(row); lw < termW {
-			row += strings.Repeat(" ", termW-lw)
-		}
-		baseLines[y+i] = row
+		baseLines[y+i] = spliceCells(baseLines[y+i], boxLines[i], x, w, termW)
 	}
 	return strings.Join(baseLines, "\n")
 }
