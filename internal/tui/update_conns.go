@@ -5,12 +5,12 @@ package tui
 import (
 	"fmt"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 )
 
 // connsKey drives the saved-connection picker.
-func (m Model) connsKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+func (m Model) connsKey(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 	// While the filter input is focused, every keystroke belongs to the
 	// filter: single-letter actions (a/e/d/...) must not hijack typing.
 	if m.conns.SettingFilter() {
