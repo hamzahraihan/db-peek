@@ -5,12 +5,12 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 )
 
 // formKey drives the add/edit connection form.
-func (m Model) formKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd) {
+func (m Model) formKey(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc":
 		m.screen = screenConns
