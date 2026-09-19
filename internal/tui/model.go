@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	dbpkg "db-peek/internal/db"
 	"db-peek/internal/saved"
@@ -136,18 +136,18 @@ func New(connStr string, store *saved.Store) Model {
 	nameInput := textinput.New()
 	nameInput.Placeholder = "prod-pg"
 	nameInput.CharLimit = 64
-	nameInput.Width = 60
+	nameInput.SetWidth(60)
 
 	connInput := textinput.New()
 	connInput.Placeholder = "postgres://user:pass@localhost:5432/db  |  mysql://...  |  ./app.db"
 	connInput.CharLimit = 512
-	connInput.Width = 80
+	connInput.SetWidth(80)
 
 	filterInput := textinput.New()
 	filterInput.Prompt = "/"
 	filterInput.Placeholder = "filter tables"
 	filterInput.CharLimit = 64
-	filterInput.Width = 32
+	filterInput.SetWidth(32)
 
 	customFilter := func(term string, targets []string) []list.Rank {
 		if re, err := regexp.Compile("(?i)" + term); err == nil {
@@ -164,7 +164,7 @@ func New(connStr string, store *saved.Store) Model {
 
 	cdelegate := list.NewDefaultDelegate()
 	cdelegate.SetSpacing(0)
-	cstyles := list.NewDefaultItemStyles()
+	cstyles := list.NewDefaultItemStyles(true)
 	cstyles.SelectedTitle = selTitle
 	cstyles.SelectedDesc = selDesc
 	cdelegate.Styles = cstyles
