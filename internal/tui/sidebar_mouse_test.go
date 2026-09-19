@@ -2,8 +2,6 @@ package tui
 
 import (
 	"testing"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // The sidebar tree viewport must agree with mouse hit-testing: Render
@@ -44,7 +42,7 @@ func scrolledShrunkModel(t *testing.T) Model {
 func TestSidebarClickAfterShrinkHitsVisibleRow(t *testing.T) {
 	m := scrolledShrunkModel(t)
 	want := m.explorer.visibleStart(m.sidebarTreeH())
-	u, _ := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: explorerFirstRow})
+	u, _ := m.Update(testClick(2, explorerFirstRow))
 	m = u.(Model)
 	if m.explorer.Cursor != want {
 		t.Fatalf("click on first visible line must select displayed row %d, got %d (offset %d)",
@@ -59,7 +57,7 @@ func TestSidebarClickAfterShrinkHitsVisibleRow(t *testing.T) {
 func TestSidebarHoverAfterShrinkFollowsMouse(t *testing.T) {
 	m := scrolledShrunkModel(t)
 	start := m.explorer.visibleStart(m.sidebarTreeH())
-	u, _ := m.Update(tea.MouseMsg{Type: tea.MouseMotion, X: 2, Y: explorerFirstRow + 2})
+	u, _ := m.Update(testMotion(2, explorerFirstRow+2))
 	m = u.(Model)
 	if want := start + 2; m.explorer.Cursor != want {
 		t.Fatalf("hover two lines down must select displayed row %d, got %d", want, m.explorer.Cursor)
@@ -75,7 +73,7 @@ func TestExplorerToggleKeepsOffsetValid(t *testing.T) {
 	// Collapse the only schema via the mouse path.
 	m.loading = false
 	m.focusDetail = false
-	u, _ := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: explorerFirstRow})
+	u, _ := m.Update(testClick(2, explorerFirstRow))
 	m = u.(Model)
 	n := len(m.explorer.VisibleRows())
 	maxOff := n - m.sidebarTreeH()
