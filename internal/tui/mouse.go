@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // listFirstRow is the terminal row of the first picker item: one app
@@ -23,15 +23,16 @@ const listFirstRow = 5
 // top border, table title, blank, tabs, blank, then the table itself.
 const detailTableTop = 6
 
-// handleMouse implements click-to-select, double-click-to-open, wheel scroll,
-// hover highlight, tab clicks, and form field focus. Coordinates are
-// 0-indexed terminal cells.
-func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+// handleMouseClick implements click-to-select, double-click-to-open and
+// form field focus. Coordinates are 0-indexed terminal cells. Only clicks
+// arrive here: wheel scroll routes to wheel() and motion to hover() via
+// Update, and non-left buttons and releases are ignored.
+func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	logMouse("event=%q x=%d y=%d screen=%d loading=%v", msg.String(), msg.X, msg.Y, m.screen, m.loading)
 	// Which-key overlay is modal: a left-press outside the overlay rect
 	// closes it, inside is a noop, and all other mouse input is swallowed.
 	if m.showHelp {
-		if msg.Type == tea.MouseLeft && msg.Action == tea.MouseActionPress {
+		if msg.Button == tea.MouseLeft {
 			x, y, w, h := m.helpRect()
 			if msg.X < x || msg.X >= x+w || msg.Y < y || msg.Y >= y+h {
 				m.showHelp = false
@@ -39,17 +40,9 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	switch msg.Type {
-	case tea.MouseWheelUp:
-		return m.wheel(-3)
-	case tea.MouseWheelDown:
-		return m.wheel(3)
-	case tea.MouseMotion:
-		return m.hover(msg)
-	}
-	if msg.Type != tea.MouseLeft || msg.Action != tea.MouseActionPress {
+	if msg.Button != tea.MouseLeft {
 		logMouse("  ignored (not left-press)")
-		return m, nil // ignore release
+		return m, nil
 	}
 	if m.loading {
 		return m, nil
@@ -94,7 +87,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			if msg.Y == m.tabStripRow() {
 				return m.clickTabs(msg.X-m.paneX()-1, msg.Y)
 			}
-		return m.clickTable(msg.X-m.paneX()-1, msg.Y, msg.Shift)
+		return m.clickTable(msg.X-m.paneX()-1, msg.Y, msg.Mod.Contains(tea.ModShift))
 	}
 	return m, nil // gap, right margin, footer: noop
 case screenForm:
@@ -103,7 +96,7 @@ default:
 	if msg.Y == m.tabStripRow() {
 		return m.clickTabs(msg.X-m.paneX()-1, msg.Y)
 	}
-	return m.clickTable(msg.X-m.paneX()-1, msg.Y, msg.Shift)
+	return m.clickTable(msg.X-m.paneX()-1, msg.Y, msg.Mod.Contains(tea.ModShift))
 	}
 }
 
@@ -285,38 +278,38 @@ func (m Model) listIndexAtRaw(y int, which screen) (int, bool) {
 
 // hover moves the highlight to follow the mouse without activating anything.
 // Motion events are deduplicated so holding the cursor still is a no-op.
-func (m Model) hover(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+func (m Model) hover(x, y int) (tea.Model, tea.Cmd) {
 	if m.loading {
 		return m, nil
 	}
 	switch m.screen {
 	case screenConns:
-		return m.hoverList(msg.Y, screenConns)
+		return m.hoverList(y, screenConns)
 	case screenBrowse:
 		// Hover never changes focusDetail (press only).
 		sideOuterW := m.sidebarW
 		detailOuterW := m.paneInnerW() + 2
 		detailX0 := m.paneX()
 		contentBottom := m.contentH()
-		inSideInterior := msg.X >= 1 && msg.X <= sideOuterW-2 && msg.Y >= 2 && msg.Y <= contentBottom-1
-		inDetailInterior := msg.X >= detailX0+1 && msg.X <= detailX0+detailOuterW-2 && msg.Y >= 2 && msg.Y <= contentBottom-1
+		inSideInterior := x >= 1 && x <= sideOuterW-2 && y >= 2 && y <= contentBottom-1
+		inDetailInterior := x >= detailX0+1 && x <= detailX0+detailOuterW-2 && y >= 2 && y <= contentBottom-1
 		if inSideInterior {
-			return m.hoverList(msg.Y, screenBrowse)
+			return m.hoverList(y, screenBrowse)
 		}
 		if inDetailInterior {
 			m.hoverTab = -1
-			if msg.Y == m.tabStripRow() {
-				return m.hoverTabs(msg.X - m.paneX() - 1), nil
+			if y == m.tabStripRow() {
+				return m.hoverTabs(x - m.paneX() - 1), nil
 			}
-			return m.hoverTable(msg.X-m.paneX()-1, msg.Y)
+			return m.hoverTable(x-m.paneX()-1, y)
 		}
 		return m, nil
 	default:
-		if msg.Y == m.tabStripRow() {
-			return m.hoverTabs(msg.X - m.paneX() - 1), nil
+		if y == m.tabStripRow() {
+			return m.hoverTabs(x - m.paneX() - 1), nil
 		}
 		m.hoverTab = -1
-		return m.hoverTable(msg.X-m.paneX()-1, msg.Y)
+		return m.hoverTable(x-m.paneX()-1, y)
 	}
 }
 
@@ -565,7 +558,7 @@ func (m Model) clickTabs(x, y int) (tea.Model, tea.Cmd) {
 // contain digits): the data table below could theoretically match too.
 func (m Model) tabStripRow() int {
 	labels := m.detailTabLabels()
-	lines := strings.Split(m.View(), "\n")
+	lines := strings.Split(m.viewString(), "\n")
 	for i, ln := range lines {
 		if i > 8 {
 			break
