@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	dbpkg "db-peek/internal/db"
 )
@@ -102,7 +102,7 @@ func TestERFocusToggle(t *testing.T) {
 	if out := m.erView(80, 20); strings.Contains(out, "unrelat") {
 		t.Fatalf("focused default must hide unrelated:\n%s", out)
 	}
-	nm, _ := m.erKeys(tea.KeyMsg{}, "f")
+	nm, _ := m.erKeys(tea.KeyPressMsg{}, "f")
 	m = nm.(Model)
 	if m.erFocus {
 		t.Fatal("f must toggle to full schema")
@@ -110,7 +110,7 @@ func TestERFocusToggle(t *testing.T) {
 	if out := m.erView(140, 20); !strings.Contains(out, "unrelated") {
 		t.Fatalf("full view must show unrelated:\n%s", out)
 	}
-	nm, _ = m.erKeys(tea.KeyMsg{}, "f")
+	nm, _ = m.erKeys(tea.KeyPressMsg{}, "f")
 	m = nm.(Model)
 	if !m.erFocus {
 		t.Fatal("second f must return to focused")
@@ -127,7 +127,7 @@ func TestERRecenterStaysOnER(t *testing.T) {
 	m.table = "orders"
 	m.tab = 4
 	m.focusDetail = true
-	nm, _ := m.erKeys(tea.KeyMsg{}, "enter")
+	nm, _ := m.erKeys(tea.KeyPressMsg{}, "enter")
 	got := nm.(Model)
 	if got.tab != 4 {
 		t.Fatalf("enter must stay on ER tab, got %d", got.tab)
