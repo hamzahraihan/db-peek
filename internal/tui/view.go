@@ -7,11 +7,23 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
-func (m Model) View() string {
+func (m Model) View() tea.View {
+	v := tea.NewView(m.viewString())
+	// Fullscreen alt-screen + cell-motion mouse: the v1 program options
+	// (WithAltScreen, WithMouseCellMotion) moved to View fields in v2.
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
+}
+
+// viewString renders the current screen to a plain string. View wraps it
+// in a tea.View; tests and mouse hit-testing use the string directly.
+func (m Model) viewString() string {
 	if m.showHelp {
 		return m.helpView()
 	}
@@ -121,8 +133,11 @@ func (m Model) browseView() string {
 	if len(right) > innerH {
 		right = right[:innerH]
 	}
-	sideBox := paneBorder(!m.focusDetail).Width(innerW).Height(innerH).Render(strings.Join(side, "\n"))
-	detailBox := paneBorder(m.focusDetail).Width(detailW).Height(innerH).Render(strings.Join(right, "\n"))
+	// v2 Width/Height are border-box (border inside): +2 restores the v1
+	// outer geometry (sidebarW / detailW+2 wide, contentH tall) that
+	// mouse hit-testing is computed against.
+	sideBox := paneBorder(!m.focusDetail).Width(innerW+2).Height(innerH+2).Render(strings.Join(side, "\n"))
+	detailBox := paneBorder(m.focusDetail).Width(detailW+2).Height(innerH+2).Render(strings.Join(right, "\n"))
 	sideLines := strings.Split(sideBox, "\n")
 	detailLines := strings.Split(detailBox, "\n")
 	h := len(sideLines)
