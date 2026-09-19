@@ -4,9 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
-
 	dbpkg "db-peek/internal/db"
 )
 
@@ -153,8 +150,6 @@ func erBorderTables() []erTable {
 }
 
 func TestERCanvasBorders(t *testing.T) {
-	lipgloss.SetColorProfile(termenv.ANSI256)
-	defer lipgloss.SetColorProfile(termenv.Ascii)
 	joined := strings.Join(erRenderCanvas(erBorderTables(), nil, 80, 20, ""), "\n")
 	for _, want := range []string{"╭", "─", "╰", "│"} {
 		if !strings.Contains(joined, want) {
@@ -164,11 +159,9 @@ func TestERCanvasBorders(t *testing.T) {
 }
 
 func TestERCanvasSelectedDistinct(t *testing.T) {
-	lipgloss.SetColorProfile(termenv.ANSI256)
-	defer lipgloss.SetColorProfile(termenv.Ascii)
 	tables := erBorderTables()
-	sel := strings.Join(erRenderCanvas(tables, nil, 80, 20, "orders"), "\n")
-	unsel := strings.Join(erRenderCanvas(tables, nil, 80, 20, ""), "\n")
+	sel := render256(strings.Join(erRenderCanvas(tables, nil, 80, 20, "orders"), "\n"))
+	unsel := render256(strings.Join(erRenderCanvas(tables, nil, 80, 20, ""), "\n"))
 	if sel == unsel {
 		t.Fatal("selected canvas must render distinctly from unselected")
 	}
@@ -184,14 +177,12 @@ func TestERCanvasSelectedDistinct(t *testing.T) {
 }
 
 func TestERCanvasHoverDistinct(t *testing.T) {
-	lipgloss.SetColorProfile(termenv.ANSI256)
-	defer lipgloss.SetColorProfile(termenv.Ascii)
 	m := browseModel(t)
 	m.erSchema = erSchemaState{loaded: true, tables: erBorderTables(),
 		links: []dbpkg.ForeignKey{{FromTable: "orders", FromColumn: "id", ToTable: "customers", ToColumn: "id"}}}
 	m.erSel = "orders"
 	m.hoverER = "customers"
-	out := m.erCanvasView(80, 20)
+	out := render256(m.erCanvasView(80, 20))
 	if !strings.Contains(out, "38;5;172m") {
 		t.Fatalf("selected box must keep gold border:\n%s", out)
 	}
