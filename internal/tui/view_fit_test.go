@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 
 	dbpkg "db-peek/internal/db"
 )
@@ -45,7 +45,7 @@ func TestBrowseViewRendersTableData(t *testing.T) {
 	m.loading = false
 
 	// Default tab is schema (tab 0); verify schema data renders.
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "integer") {
 		t.Fatal("schema tab should contain column types")
 	}
@@ -56,7 +56,7 @@ func TestBrowseViewRendersTableData(t *testing.T) {
 	// Switch to rows tab and verify sample data renders.
 	m.tab = 2
 	m.sizeTables()
-	view = m.View()
+	view = m.View().Content
 	if !strings.Contains(view, "Alice") {
 		t.Fatal("rows tab should contain sample data")
 	}
