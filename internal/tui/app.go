@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"db-peek/internal/saved"
 )
@@ -21,7 +21,7 @@ func Run(connStr string, store *saved.Store) error {
 		fmt.Fprintln(os.Stderr, "db-peek: mouse debug log →", mouseLogPath())
 	}
 	m := New(connStr, store)
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(m)
 	_, err := p.Run()
 	return err
 }
