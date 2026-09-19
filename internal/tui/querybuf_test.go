@@ -4,15 +4,14 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	dbpkg "db-peek/internal/db"
 )
 
 func TestNewBufferPreservesCurrentText(t *testing.T) {
 	m := queryTabModel()
 	m.editor.SetText("SELECT 1")
-	u, _ := m.queryKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")}, "t")
+	u, _ := m.queryKeys(testKey("t"), "t")
 	// 't' in editor focus must insert, not create buffer.
 	m2 := u.(Model)
 	if got := m2.editor.Text(); !strings.Contains(got, "t") {
@@ -24,7 +23,7 @@ func TestNewBufferPreservesCurrentText(t *testing.T) {
 	// Results focus + t creates a new buffer.
 	m.queryFocus = 1
 	m.saveActiveBuf()
-	u, _ = m.queryKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")}, "t")
+	u, _ = m.queryKeys(testKey("t"), "t")
 	m = u.(Model)
 	if len(m.qbufs) != 2 {
 		t.Fatalf("results t must create buffer, got %d", len(m.qbufs))
@@ -41,7 +40,7 @@ func TestCtrlTCreatesBufferFromEditor(t *testing.T) {
 	m := queryTabModel()
 	m.editor.SetText("SELECT 1")
 	m.showComplete = false
-	u, _ := m.queryKeys(tea.KeyMsg{Type: tea.KeyCtrlT}, "ctrl+t")
+	u, _ := m.queryKeys(testKey("ctrl+t"), "ctrl+t")
 	m = u.(Model)
 	if len(m.qbufs) != 2 {
 		t.Fatalf("ctrl+t must create buffer, got %d", len(m.qbufs))
@@ -56,19 +55,19 @@ func TestHLSwitchesBuffersInResults(t *testing.T) {
 	m.editor.SetText("SELECT 1")
 	m.queryFocus = 1
 	m.saveActiveBuf()
-	u, _ := m.queryKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")}, "t")
+	u, _ := m.queryKeys(testKey("t"), "t")
 	m = u.(Model)
 	m.editor.SetText("SELECT 2")
 	m.saveActiveBuf()
 	m.queryFocus = 1
 	// H -> buffer 0.
-	u, _ = m.queryKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")}, "H")
+	u, _ = m.queryKeys(testKey("H"), "H")
 	m = u.(Model)
 	if got := m.editor.Text(); !strings.Contains(got, "SELECT 1") {
 		t.Fatalf("H must switch to buffer 0, got %q", got)
 	}
 	// L -> buffer 1.
-	u, _ = m.queryKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("L")}, "L")
+	u, _ = m.queryKeys(testKey("L"), "L")
 	m = u.(Model)
 	if got := m.editor.Text(); !strings.Contains(got, "SELECT 2") {
 		t.Fatalf("L must switch to buffer 1, got %q", got)
@@ -83,7 +82,7 @@ func TestCloseLastBufferClears(t *testing.T) {
 	m.editor.SetText("SELECT 1")
 	m.saveActiveBuf()
 	m.queryFocus = 1
-	u, _ := m.queryKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("X")}, "X")
+	u, _ := m.queryKeys(testKey("X"), "X")
 	m = u.(Model)
 	if len(m.qbufs) != 1 {
 		t.Fatalf("close last must keep 1 buffer, got %d", len(m.qbufs))
@@ -175,7 +174,7 @@ func TestEditorPanelSpacing(t *testing.T) {
 		t.Fatalf("results top must clear panel+hint, got %d", got)
 	}
 	// Clicks on the padding row must not move the cursor.
-	u, _ := m.Update(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: m.paneX() + 3, Y: detailTableTop})
+	u, _ := m.Update(testClick(m.paneX()+3, detailTableTop))
 	mm := u.(Model)
 	if mm.editor.CurLine != m.editor.CurLine || mm.queryFocus != m.queryFocus {
 		t.Fatal("padding click must be a noop")
