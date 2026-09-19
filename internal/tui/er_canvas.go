@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	dbpkg "db-peek/internal/db"
 )
@@ -92,7 +92,9 @@ func erBoxLinesEx(t erTable, total int, selected, hovered bool) []string {
 	cols, more := erVisibleCols(t, total)
 	w := erBoxWidth(t)
 	head := fitText("▦ "+t.name, w)
-	style := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#005FD7")).Width(w)
+	// v2 Width is border-box: +2 keeps rows (built w wide below) fitting
+	// the content area exactly, as under v1.
+	style := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#005FD7")).Width(w+2)
 	switch {
 	case selected:
 		style = style.BorderForeground(lipgloss.Color("#CA8A04"))
