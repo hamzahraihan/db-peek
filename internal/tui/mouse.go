@@ -45,8 +45,13 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.loading {
+		m.draggingEditor = false
 		return m, nil
 	}
+	// A new press supersedes any armed drag; the editor press path
+	// re-arms below. This keeps clicks on tabs/sidebar/results from
+	// leaving a stale drag behind.
+	m.draggingEditor = false
 	switch m.screen {
 	case screenConns:
 		if msg.Y >= listFirstRow {
@@ -475,6 +480,7 @@ func (m Model) clickQuery(x, y int, shift bool) (tea.Model, tea.Cmd) {
 				m.completeItems = nil
 				m.completeIdx = 0
 				m.clampEditorScroll()
+				m.draggingEditor = false
 				logMouse("  clickQuery popup y=%d -> accept %d", y, idx)
 				return m, nil
 			}
@@ -489,7 +495,8 @@ func (m Model) clickQuery(x, y int, shift bool) (tea.Model, tea.Cmd) {
 		}
 		if shift {
 			m.editor.ExtendSelectionTo(line)
-			m.refreshCompletion()
+			m.dismissCompletion()
+			m.draggingEditor = false
 			logMouse("  clickQuery editor y=%d -> extend line %d", y, line)
 			return m, nil
 		}
@@ -503,7 +510,13 @@ func (m Model) clickQuery(x, y int, shift bool) (tea.Model, tea.Cmd) {
 			col = max
 		}
 		m.editor.CurCol = col
-		m.refreshCompletion()
+		m.dismissCompletion()
+		// Arm drag: the anchor stays inactive until motion leaves the
+		// press point, so a plain click leaves no selection (and no
+		// auto-copy on release).
+		m.dragAnchor = line
+		m.dragAnchorCol = col
+		m.draggingEditor = true
 		logMouse("  clickQuery editor y=%d -> line %d col %d", y, line, col)
 		return m, nil
 	}
@@ -514,6 +527,83 @@ func (m Model) clickQuery(x, y int, shift bool) (tea.Model, tea.Cmd) {
 	logMouse("  clickQuery results y=%d -> select %d", y, abs)
 	m.queryFocus = 1
 	m.queryTable.SetCursor(abs)
+	m.draggingEditor = false
+	return m, nil
+}
+
+// dragQueryLine maps an absolute terminal row to an editor line while a
+// drag is armed. ok=false when the row is outside the editor rows (the
+// drag stays armed so the user can steer back in).
+func (m Model) dragQueryLine(y int) (line int, ok bool) {
+	if !(m.focusDetail && m.tab == 3 && m.queryFocus == 0) {
+		return 0, false
+	}
+	rel := y - queryEditorTop()
+	if rel < 0 || rel >= queryEditorH {
+		return 0, false
+	}
+	line = m.editor.OffY + rel
+	if line < 0 {
+		line = 0
+	}
+	if line > len(m.editor.Lines)-1 {
+		line = len(m.editor.Lines) - 1
+	}
+	return line, true
+}
+
+// dragQueryCol maps an absolute terminal column to a rune offset on the
+// given editor line: panel border(1) + gutter " %2d "(4), clamped.
+func (m Model) dragQueryCol(x, line int) (col int) {
+	col = x - 5
+	if col < 0 {
+		col = 0
+	}
+	if max := len([]rune(m.editor.Lines[line])); col > max {
+		col = max
+	}
+	return col
+}
+
+// dragQueryTo extends the press-anchored selection to (line, col): a
+// cross-line drag selects whole lines (matching shift+up/down and
+// shift+click), a same-line drag selects the precise rune span. Motion
+// back onto the press point keeps the selection inactive so a plain
+// click never leaves a selection behind.
+func (m Model) dragQueryTo(line, col int) (tea.Model, tea.Cmd) {
+	if line == m.dragAnchor {
+		m.editor.CurLine = m.dragAnchor
+		m.editor.CurCol = m.dragAnchorCol
+		m.editor.ExtendSelectionToPos(line, col)
+		if m.editor.SelectionEmpty() {
+			m.editor.ClearSelection()
+			return m, nil
+		}
+		m.dismissCompletion()
+		m.clampEditorScroll()
+		return m, nil
+	}
+	m.editor.CurLine = m.dragAnchor
+	m.editor.CurCol = m.dragAnchorCol
+	m.editor.ExtendSelectionTo(line)
+	m.dismissCompletion()
+	m.clampEditorScroll()
+	return m, nil
+}
+
+// handleMouseRelease ends an armed editor drag. A non-empty selection is
+// auto-copied to the clipboard (file fallback preserved); a plain click
+// (no motion) leaves no selection and copies nothing.
+func (m Model) handleMouseRelease(x, y int) (tea.Model, tea.Cmd) {
+	_, _ = x, y
+	if !m.draggingEditor {
+		return m, nil
+	}
+	m.draggingEditor = false
+	if m.editor.SelectionEmpty() {
+		return m, nil
+	}
+	m.status = m.copySelectionText(m.editor.SelectionText())
 	return m, nil
 }
 

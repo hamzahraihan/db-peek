@@ -318,9 +318,30 @@ func (m Model) editorLineView(lineIdx int, src string, cells []hlCell, w int) st
 	rs, styles = rs[:keep], styles[:keep]
 	var b strings.Builder
 	b.WriteString(dimStyle.Render(fmt.Sprintf(" %2d ", lineIdx+1)))
+	// Character-precise selection (shift+left/right, same-line drag):
+	// highlight only the rune span on this line. Whole-line selections
+	// keep the legacy whole-row wrap in finish() below.
+	selS, selE := -1, -1
+	if _, _, active := m.editor.SelectedRange(); active && !m.editor.selLineWise {
+		alo, aco, chi, cco, _ := m.editor.SelectionSpan()
+		if lineIdx >= alo && lineIdx <= chi {
+			selS = 0
+			selE = len(rs)
+			if lineIdx == alo {
+				selS = aco
+			}
+			if lineIdx == chi {
+				selE = cco
+			}
+			if selS >= selE {
+				selS, selE = -1, -1
+			}
+		}
+	}
+	sel := func(i int) bool { return selS >= 0 && i >= selS && i < selE }
 	finish := func() string {
 		lineStr := b.String()
-		if lo, hi, active := m.editor.SelectedRange(); active && lineIdx >= lo && lineIdx <= hi {
+		if lo, hi, active := m.editor.SelectedRange(); active && m.editor.selLineWise && lineIdx >= lo && lineIdx <= hi {
 			// Reuse the grid selection role so block matches app chrome.
 			return dataSelectedStyle.Render(lineStr)
 		}
@@ -334,7 +355,11 @@ func (m Model) editorLineView(lineIdx int, src string, cells []hlCell, w int) st
 	cur := m.editor.CurCol
 	if lineIdx != m.editor.CurLine || cur < 0 {
 		for i, r := range rs {
-			b.WriteString(styles[i].Render(string(r)))
+			if sel(i) {
+				b.WriteString(dataSelectedStyle.Render(string(r)))
+			} else {
+				b.WriteString(styles[i].Render(string(r)))
+			}
 		}
 		return finish()
 	}
@@ -342,7 +367,9 @@ func (m Model) editorLineView(lineIdx int, src string, cells []hlCell, w int) st
 		cur = len(rs)
 	}
 	for i, r := range rs {
-		if i == cur {
+		if sel(i) {
+			b.WriteString(dataSelectedStyle.Render(string(r)))
+		} else if i == cur {
 			b.WriteString(queryCursorStyle.Render(string(r)))
 		} else {
 			b.WriteString(styles[i].Render(string(r)))

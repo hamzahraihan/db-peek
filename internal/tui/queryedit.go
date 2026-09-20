@@ -13,8 +13,10 @@ type Editor struct {
 	CurLine   int
 	CurCol    int // rune offset within line
 	OffY      int // first visible line
-	selAnchor int
+	selAnchor int // anchor line
+	selAnchorCol int // anchor column (rune offset); only used when !selLineWise
 	selActive bool
+	selLineWise bool // true = whole lines lo..hi (shift+up/down, shift+click, vertical drag)
 }
 
 func NewEditor() Editor { return Editor{Lines: []string{""}} }
@@ -137,6 +139,7 @@ func (e *Editor) ExtendSelectionTo(line int) {
 	if !e.selActive {
 		e.selAnchor, e.selActive = e.CurLine, true
 	}
+	e.selLineWise = true
 	if line < 0 {
 		line = 0
 	}
@@ -150,12 +153,107 @@ func (e *Editor) ExtendSelectionTo(line int) {
 	}
 }
 
+// ExtendSelectionToPos extends a character-precise selection to (line,
+// col). The first call anchors at the pre-move cursor; a zero-width span
+// deactivates so taps never leave selections behind.
+func (e *Editor) ExtendSelectionToPos(line, col int) {
+	if line < 0 {
+		line = 0
+	}
+	if line >= len(e.Lines) {
+		line = len(e.Lines) - 1
+	}
+	rs := []rune(e.Lines[line])
+	if col < 0 {
+		col = 0
+	}
+	if col > len(rs) {
+		col = len(rs)
+	}
+	if !e.selActive {
+		e.selAnchor, e.selAnchorCol, e.selActive = e.CurLine, e.CurCol, true
+	}
+	e.selLineWise = false
+	e.CurLine, e.CurCol = line, col
+	if e.selAnchor == e.CurLine && e.selAnchorCol == e.CurCol {
+		e.selActive = false
+	}
+}
+
+// ExtendSelectionChar extends a character-precise selection one rune
+// left (right=false) or right (right=true), wrapping across line
+// boundaries like MoveLeft/MoveRight. A zero-width result deactivates.
+func (e *Editor) ExtendSelectionChar(right bool) {
+	line, col := e.CurLine, e.CurCol
+	if line < 0 {
+		line = 0
+	}
+	if line >= len(e.Lines) {
+		line = len(e.Lines) - 1
+	}
+	if right {
+		if col < len([]rune(e.Lines[line])) {
+			col++
+		} else if line < len(e.Lines)-1 {
+			line++
+			col = 0
+		}
+	} else {
+		if col > 0 {
+			col--
+		} else if line > 0 {
+			line--
+			col = len([]rune(e.Lines[line]))
+		}
+	}
+	e.ExtendSelectionToPos(line, col)
+}
+
+// SelectionSpan returns the normalized character-precise endpoints
+// (anchor-first ordering): lines alo..chi with rune columns aco..cco on
+// the outer lines. Middle lines are fully included. Line-wise selections
+// report (lo,0)-(hi,eol) so callers share one code path.
+func (e *Editor) SelectionSpan() (alo, aco, chi, cco int, active bool) {
+	if !e.selActive {
+		return 0, 0, 0, 0, false
+	}
+	lo, hi, _ := e.SelectedRange()
+	if e.selLineWise {
+		return lo, 0, hi, len([]rune(e.Lines[hi])), true
+	}
+	alo, aco = e.selAnchor, e.selAnchorCol
+	chi, cco = e.CurLine, e.CurCol
+	if alo > chi || (alo == chi && aco > cco) {
+		alo, aco, chi, cco = chi, cco, alo, aco
+	}
+	return alo, aco, chi, cco, true
+}
+
+// SelectionEmpty reports a zero-width (or inactive) selection.
+func (e *Editor) SelectionEmpty() bool {
+	alo, aco, chi, cco, active := e.SelectionSpan()
+	return !active || (alo == chi && aco == cco)
+}
+
 func (e *Editor) SelectionText() string {
 	lo, hi, active := e.SelectedRange()
 	if !active {
 		return ""
 	}
-	return strings.Join(e.Lines[lo:hi+1], "\n")
+	if e.selLineWise {
+		return strings.Join(e.Lines[lo:hi+1], "\n")
+	}
+	alo, aco, chi, cco, _ := e.SelectionSpan()
+	if alo == chi {
+		rs := []rune(e.Lines[alo])
+		return string(rs[aco:cco])
+	}
+	out := string([]rune(e.Lines[alo])[aco:])
+	for _, ln := range e.Lines[alo+1 : chi] {
+		out += "\n" + ln
+	}
+	out += "\n" + string([]rune(e.Lines[chi])[:cco])
+	return out
 }
 
 func (e *Editor) DeleteCurrentLine() {

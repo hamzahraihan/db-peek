@@ -111,6 +111,11 @@ type Model struct {
 	lastHoverIdx   int
 	lastHoverWhere screen
 	hoverTab       int // tab under the cursor, -1 when none
+	// Editor line-block drag: press anchors, motion extends, release ends
+	// (and auto-copies multi-line blocks). dragAnchor is the pressed line.
+	draggingEditor bool
+	dragAnchor     int
+	dragAnchorCol  int // pressed column (rune offset) for same-line drags
 }
 
 // erTable is one box on the ER canvas.

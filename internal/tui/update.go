@@ -401,18 +401,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		// Keyboard and mouse drag are mutually exclusive: any key
+		// cancels an armed drag (selection, if any, is handled by the
+		// key itself via ClearSelection/ExtendSelectionTo).
+		m.draggingEditor = false
 		return m.handleKey(msg)
 
 	case tea.MouseClickMsg:
 		return m.handleMouseClick(msg)
 	case tea.MouseWheelMsg:
 		// v2 reports wheel direction in Button; release events arrive
-		// as MouseReleaseMsg and are ignored (as in v1).
+		// as MouseReleaseMsg (handled below).
+		m.draggingEditor = false
 		if msg.Button == tea.MouseWheelUp {
 			return m.wheel(-3)
 		}
 		return m.wheel(3)
+	case tea.MouseReleaseMsg:
+		return m.handleMouseRelease(msg.X, msg.Y)
 	case tea.MouseMotionMsg:
+		if m.draggingEditor && !m.loading {
+			if next, ok := m.dragQueryLine(msg.Y); ok {
+				// x arrives absolute; clickQuery math is border-relative.
+				return m.dragQueryTo(next, m.dragQueryCol(msg.X-m.paneX()-1, next))
+			}
+			return m, nil
+		}
 		return m.hover(msg.X, msg.Y)
 	}
 	// Route updates to the focused component.
@@ -781,6 +795,13 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 				}
 				m.clampEditorScroll()
 				return m, nil
+			case "shift+left", "shift+right":
+				m.showComplete = false
+				m.completeItems = nil
+				m.completeIdx = 0
+				m.editor.ExtendSelectionChar(key == "shift+right")
+				m.clampEditorScroll()
+				return m, nil
 			case "esc":
 				m.showComplete = false
 				m.completeItems = nil
@@ -810,6 +831,23 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 					m.completeIdx++
 				}
 				return m, nil
+			case "left", "right", "home", "end":
+				// Cursor navigation while open dismisses instead of
+				// re-opening: only edits should show suggestions.
+				m.dismissCompletion()
+				m.editor.ClearSelection()
+				switch key {
+				case "left":
+					m.editor.MoveLeft()
+				case "right":
+					m.editor.MoveRight()
+				case "home":
+					m.editor.Home()
+				case "end":
+					m.editor.End()
+				}
+				m.clampEditorScroll()
+				return m, nil
 			case "ctrl+r", "f5":
 				m.showComplete = false
 				m.completeItems = nil
@@ -822,14 +860,14 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 				m.completeIdx = 0
 				m.saveActiveBuf()
 				m.newQueryBuf()
-				m.refreshCompletion()
+				m.dismissCompletion()
 				return m, nil
 			case "ctrl+w":
 				m.showComplete = false
 				m.completeItems = nil
 				m.completeIdx = 0
 				m.closeQueryBuf()
-				m.refreshCompletion()
+				m.dismissCompletion()
 				return m, nil
 			}
 		}
@@ -860,12 +898,22 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 		case "shift+up":
 			m.editor.ExtendSelectionTo(m.editor.CurLine - 1)
 			m.clampEditorScroll()
-			m.refreshCompletion()
+			m.dismissCompletion()
 			return m, nil
 		case "shift+down":
 			m.editor.ExtendSelectionTo(m.editor.CurLine + 1)
 			m.clampEditorScroll()
-			m.refreshCompletion()
+			m.dismissCompletion()
+			return m, nil
+		case "shift+left":
+			m.editor.ExtendSelectionChar(false)
+			m.clampEditorScroll()
+			m.dismissCompletion()
+			return m, nil
+		case "shift+right":
+			m.editor.ExtendSelectionChar(true)
+			m.clampEditorScroll()
+			m.dismissCompletion()
 			return m, nil
 		case "ctrl+d":
 			if _, _, active := m.editor.SelectedRange(); active {
@@ -888,11 +936,11 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 		case "ctrl+t":
 			m.saveActiveBuf()
 			m.newQueryBuf()
-			m.refreshCompletion()
+			m.dismissCompletion()
 			return m, nil
 		case "ctrl+w":
 			m.closeQueryBuf()
-			m.refreshCompletion()
+			m.dismissCompletion()
 			return m, nil
 		case "enter":
 			m.editor.ClearSelection()
@@ -915,35 +963,35 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 			m.editor.ClearSelection()
 			m.editor.MoveUp()
 			m.clampEditorScroll()
-			m.refreshCompletion()
+			m.dismissCompletion()
 			return m, nil
 		case "down":
 			m.editor.ClearSelection()
 			m.editor.MoveDown()
 			m.clampEditorScroll()
-			m.refreshCompletion()
+			m.dismissCompletion()
 			return m, nil
 		case "left":
 			m.editor.ClearSelection()
 			m.editor.MoveLeft()
 			m.clampEditorScroll()
-			m.refreshCompletion()
+			m.dismissCompletion()
 			return m, nil
 		case "right":
 			m.editor.ClearSelection()
 			m.editor.MoveRight()
 			m.clampEditorScroll()
-			m.refreshCompletion()
+			m.dismissCompletion()
 			return m, nil
 		case "home":
 			m.editor.ClearSelection()
 			m.editor.Home()
-			m.refreshCompletion()
+			m.dismissCompletion()
 			return m, nil
 		case "end":
 			m.editor.ClearSelection()
 			m.editor.End()
-			m.refreshCompletion()
+			m.dismissCompletion()
 			return m, nil
 		}
 		// Every rune inserts while editing, including "?" (Postgres JSON
