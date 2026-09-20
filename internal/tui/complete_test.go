@@ -49,6 +49,10 @@ func testKey(name string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModShift}
 	case "shift+down":
 		return tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModShift}
+	case "shift+left":
+		return tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModShift}
+	case "shift+right":
+		return tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift}
 	case "f5":
 		return tea.KeyPressMsg{Code: tea.KeyF5}
 	}

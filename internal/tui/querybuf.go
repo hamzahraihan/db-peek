@@ -128,6 +128,7 @@ func (m *Model) loadActiveBuf(idx int) {
 	m.showComplete = false
 	m.completeItems = nil
 	m.completeIdx = 0
+	m.draggingEditor = false
 	m.clampEditorScroll()
 	m.sizeTables()
 }

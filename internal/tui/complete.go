@@ -206,8 +206,20 @@ func (m *Model) completionContext() (tables []string, colsByTable map[string][]s
 	return tables, colsByTable, curCols
 }
 
+// dismissCompletion closes the popup without rebuilding it. Use for cursor
+// navigation (arrows, home/end, mouse clicks) where the popup must not
+// reopen: only text edits should trigger suggestions.
+func (m *Model) dismissCompletion() {
+	m.showComplete = false
+	m.completeItems = nil
+	m.completeIdx = 0
+}
+
 // refreshCompletion rebuilds the popup from the cursor word. It is a no-op
-// unless the query editor is focused.
+// unless the query editor is focused. Call only from text edits (type,
+// delete, newline, indent, comment toggle); navigation must call
+// dismissCompletion instead so hovering/clicking into e.g. JOIN never pops
+// the dropdown.
 func (m *Model) refreshCompletion() {
 	m.showComplete = false
 	m.completeItems = nil
