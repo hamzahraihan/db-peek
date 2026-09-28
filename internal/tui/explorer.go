@@ -244,6 +244,23 @@ func (e *Explorer) tableByName(schema, table string) (TableNode, bool) {
 	return TableNode{}, false
 }
 
+// schemaOf returns the schema that owns table, or "" when the table is
+// not in the tree (or is ambiguous across schemas).
+func (e *Explorer) schemaOf(table string) string {
+	found := ""
+	for _, s := range e.Schemas {
+		for _, tb := range s.Tables {
+			if tb.Name == table {
+				if found != "" {
+					return "" // ambiguous: do not guess
+				}
+				found = s.Name
+			}
+		}
+	}
+	return found
+}
+
 func (e *Explorer) columnByName(schema, table, col string) (ColumnNode, bool) {
 	tb, ok := e.tableByName(schema, table)
 	if !ok {
@@ -312,10 +329,16 @@ func setLastCell(line, ch string, w int) string {
 // scrolled, e.g. collapsing a schema) shows one window while clicks map
 // into another.
 func (e *Explorer) visibleStart(viewH int) int {
+	return e.visibleStartN(viewH, len(e.VisibleRows()))
+}
+
+// visibleStartN is visibleStart with the row count supplied by the caller,
+// so Render does not rebuild the flattened tree a second time per frame.
+func (e *Explorer) visibleStartN(viewH, total int) int {
 	if viewH < 1 {
 		viewH = 1
 	}
-	maxStart := len(e.VisibleRows()) - viewH
+	maxStart := total - viewH
 	if maxStart < 0 {
 		maxStart = 0
 	}
@@ -334,7 +357,7 @@ func (e *Explorer) Render(sidebarW, height int) string {
 	if height < 1 {
 		height = 1
 	}
-	start := e.visibleStart(height)
+	start := e.visibleStartN(height, len(rows))
 	end := start + height
 	if end > len(rows) {
 		end = len(rows)
@@ -349,28 +372,35 @@ func (e *Explorer) Render(sidebarW, height int) string {
 	}
 	connLine := explorerConn.Render(connLeft) + strings.Repeat(" ", gap) + dimStyle.Render("×")
 	b.WriteString(connLine + "\n")
+	// Index the tree once: the row loop below is per visible row, and a
+	// linear scan per row makes a wide schema quadratic per frame.
+	tblIdx := map[[2]string]TableNode{}
+	schemaIdx := map[string]SchemaNode{}
+	colIdx := map[[3]string]ColumnNode{}
+	for _, s := range e.Schemas {
+		schemaIdx[s.Name] = s
+		for _, tb := range s.Tables {
+			tblIdx[[2]string{tb.Schema, tb.Name}] = tb
+			for _, c := range tb.Columns {
+				colIdx[[3]string{tb.Schema, tb.Name, c.Name}] = c
+			}
+		}
+	}
 	var lines []string
 	for i, r := range vis {
 		var line string
 		switch r.Kind {
 		case RowSchema:
+			s := schemaIdx[r.Schema]
 			disc := "▸"
-			for _, s := range e.Schemas {
-				if s.Name == r.Schema && s.Expanded {
-					disc = "▾"
-				}
-			}
-			n := 0
-			for _, s := range e.Schemas {
-				if s.Name == r.Schema {
-					n = len(s.Tables)
-				}
+			if s.Expanded {
+				disc = "▾"
 			}
 			left := disc + " 🗄 " + r.Schema
-			right := fmt.Sprintf("%d", n)
+			right := fmt.Sprintf("%d", len(s.Tables))
 			line = explorerLine(left, right, func(s string) string { return explorerCount.Render(s) }, sidebarW)
 		case RowTable:
-			tb, _ := e.tableByName(r.Schema, r.Table)
+			tb := tblIdx[[2]string{r.Schema, r.Table}]
 			disc := "▸"
 			if tb.Expanded {
 				disc = "▾"
@@ -390,7 +420,7 @@ func (e *Explorer) Render(sidebarW, height int) string {
 			}
 			line = explorerLine(left, right, func(s string) string { return explorerCount.Render(s) }, sidebarW)
 		case RowColumn:
-			c, _ := e.columnByName(r.Schema, r.Table, r.Column)
+			c := colIdx[[3]string{r.Schema, r.Table, r.Column}]
 			icon := "◇"
 			styleLeft := func(s string) string { return explorerCol.Render(s) }
 			switch {

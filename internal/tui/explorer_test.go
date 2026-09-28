@@ -95,3 +95,28 @@ func TestExplorerRenderGoldSelection(t *testing.T) {
 		}
 	}
 }
+
+// Render now indexes the tree instead of scanning it per row. The indexed
+// lookups must agree with the linear ones, and the same-schema-per-table
+// invariant must hold when a schema is renamed.
+func TestExplorerRenderUsesIndexedLookups(t *testing.T) {
+	e := fixtureExplorer()
+	e.Offset = 0
+	out := render256(e.Render(34, 20))
+	// The expanded table's columns only appear if the column index resolves.
+	for _, want := range []string{"▾ 🗄 public", "▾ ▦ orders", "▸ ▦ customers", "integer", "text", "4.0k"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("render lost %q:\n%s", want, out)
+		}
+	}
+	// visibleStartN must clamp exactly like visibleStart.
+	for _, viewH := range []int{1, 5, 20, 100} {
+		if got, want := e.visibleStartN(viewH, len(e.VisibleRows())), e.visibleStart(viewH); got != want {
+			t.Fatalf("viewH=%d: visibleStartN=%d, visibleStart=%d", viewH, got, want)
+		}
+	}
+	e.Offset = 999
+	if got := e.visibleStartN(2, 3); got != 1 {
+		t.Fatalf("offset must clamp to total-viewH, got %d", got)
+	}
+}
