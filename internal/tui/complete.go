@@ -51,21 +51,22 @@ func completeWord(line string, col int) (prefix string, start int) {
 	return string(rs[start:col]), start
 }
 
-// dotTableForPrefix returns the table name in "table.<prefix>" when fullText
-// ends with that shape at the prefix position, else "".
-func dotTableForPrefix(fullText, prefix string) string {
-	lower := strings.ToLower(fullText)
+// dotTableForPrefix returns the table name in "table.<prefix>" when lowerText
+// (fullText, already lower-cased) ends with that shape at the prefix
+// position, else "". The caller owns the lower-casing so a keystroke does
+// not copy the whole buffer twice.
+func dotTableForPrefix(lowerText, fullText, prefix string) string {
 	needle := strings.ToLower(prefix)
-	idx := strings.LastIndex(lower, needle)
+	idx := strings.LastIndex(lowerText, needle)
 	if idx <= 0 {
 		return ""
 	}
-	if lower[idx-1] != '.' {
+	if lowerText[idx-1] != '.' {
 		return ""
 	}
 	end := idx - 1
 	start := end
-	for start > 0 && isCompleteRune(rune(lower[start-1])) {
+	for start > 0 && isCompleteRune(rune(lowerText[start-1])) {
 		start--
 	}
 	return fullText[start:end]
@@ -103,9 +104,9 @@ func referencedTables(text string) []string {
 // completeCandidates ranks suggestions for prefix: exact-prefix matches
 // first (tables, then columns, then keywords), then substring matches.
 // In "table." dot mode only that table's columns are returned.
-func completeCandidates(prefix, curTable, editorText string, tables []string, colsByTable map[string][]string, curCols []string) []completeItem {
+func completeCandidates(prefix, curTable, editorText, editorTextLower string, tables []string, colsByTable map[string][]string, curCols []string) []completeItem {
 	lower := strings.ToLower(prefix)
-	if t := dotTableForPrefix(editorText, prefix); t != "" {
+	if t := dotTableForPrefix(editorTextLower, editorText, prefix); t != "" {
 		var out []completeItem
 		for _, c := range colsByTable[strings.ToLower(t)] {
 			if strings.HasPrefix(strings.ToLower(c), lower) {
@@ -183,9 +184,26 @@ func applyCompletion(line string, col int, item completeItem) (string, int) {
 	return out, start + len([]rune(item.Text))
 }
 
+// completionMemo caches the table×column index rebuilt on every keystroke.
+// It hangs off a pointer because Model is copied by value on every Update.
+type completionMemo struct {
+	gen, colsGen int // explorerGen, and a counter bumped on every m.cols write
+	table        string
+	tables       []string
+	colsByTable  map[string][]string
+	curCols      []string
+}
+
 // completionContext gathers candidate sources from the explorer and the
-// current table's loaded columns.
+// current table's loaded columns. The explorer index only changes when
+// the tree or the selected table's columns do, so it is memoized.
 func (m *Model) completionContext() (tables []string, colsByTable map[string][]string, curCols []string) {
+	if m.ccMemo == nil {
+		m.ccMemo = &completionMemo{}
+	}
+	if c := m.ccMemo; c.gen == m.explorerGen && c.colsGen == m.colsGen && c.table == m.table {
+		return c.tables, c.colsByTable, c.curCols
+	}
 	colsByTable = map[string][]string{}
 	for _, s := range m.explorer.Schemas {
 		for _, tb := range s.Tables {
@@ -202,6 +220,10 @@ func (m *Model) completionContext() (tables []string, colsByTable map[string][]s
 	}
 	if _, ok := colsByTable[strings.ToLower(m.table)]; !ok && len(curCols) > 0 {
 		colsByTable[strings.ToLower(m.table)] = curCols
+	}
+	*m.ccMemo = completionMemo{
+		gen: m.explorerGen, colsGen: m.colsGen, table: m.table,
+		tables: tables, colsByTable: colsByTable, curCols: curCols,
 	}
 	return tables, colsByTable, curCols
 }
@@ -236,8 +258,9 @@ func (m *Model) refreshCompletion() {
 	if prefix == "" && !strings.HasSuffix(lineBeforeCol(line, m.editor.CurCol), ".") {
 		return
 	}
+	text := m.editor.Text()
 	tables, colsByTable, curCols := m.completionContext()
-	items := completeCandidates(prefix, m.table, m.editor.Text(), tables, colsByTable, curCols)
+	items := completeCandidates(prefix, m.table, text, strings.ToLower(text), tables, colsByTable, curCols)
 	if len(items) == 0 {
 		return
 	}

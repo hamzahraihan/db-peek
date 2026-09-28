@@ -3,6 +3,7 @@ package tui
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -10,6 +11,8 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
+
+	"db-peek/internal/saved"
 )
 
 // testKey builds a v2 KeyPressMsg whose String() yields name: single
@@ -107,7 +110,7 @@ func TestCompleteDotContext(t *testing.T) {
 func TestCompleteRanking(t *testing.T) {
 	tables := []string{"orders", "customers"}
 	cols := map[string][]string{"orders": {"id", "status"}}
-	got := completeCandidates("ord", "orders", "SELECT ord", tables, cols, []string{"id", "status"})
+	got := completeCandidates("ord", "orders", "SELECT ord", "select ord", tables, cols, []string{"id", "status"})
 	if len(got) == 0 || got[0].Text != "orders" {
 		t.Fatalf("tables first, got %+v", got)
 	}
@@ -116,7 +119,7 @@ func TestCompleteRanking(t *testing.T) {
 func TestCompleteDotColumns(t *testing.T) {
 	tables := []string{"orders", "customers"}
 	cols := map[string][]string{"orders": {"id", "status"}}
-	got := completeCandidates("", "orders", "SELECT orders.", tables, cols, []string{"id"})
+	got := completeCandidates("", "orders", "SELECT orders.", "select orders.", tables, cols, []string{"id"})
 	if len(got) != 2 {
 		t.Fatalf("dot should list orders columns, got %+v", got)
 	}
@@ -169,8 +172,16 @@ func TestCompleteAcceptAndEsc(t *testing.T) {
 	}
 }
 
+// TestMain keeps every test in this package off the developer's real
+// session.json: the loader is stubbed for the whole run.
+func TestMain(m *testing.M) {
+	loadSessionFunc = func() (*saved.Session, error) { return &saved.Session{}, nil }
+	os.Exit(m.Run())
+}
+
 func queryTabModel() Model {
 	m := New("", nil)
+	m.history = &saved.History{} // never read the developer's real history
 	m.screen = screenBrowse
 	m.width, m.height = 120, 40
 	m.focusDetail, m.tab, m.queryFocus = true, 3, 0
