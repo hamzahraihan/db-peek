@@ -205,7 +205,8 @@ func (m Model) clickList(y int, which screen) (tea.Model, tea.Cmd) {
 
 // clickExplorer maps a sidebar click row to an explorer tree row.
 // Schema rows toggle collapse; table rows toggle and preview in the
-// detail pane (columns load + inspect); column rows preview their table.
+// detail pane; column rows preview their table. The detail load fetches
+// the columns, so no separate column query is issued.
 // Clicks on sidebar chrome (title/conn/separator) are no-ops — disconnect
 // stays on c/esc keys.
 func (m Model) clickExplorer(x, y int) (tea.Model, tea.Cmd) {
@@ -229,13 +230,10 @@ func (m Model) clickExplorer(x, y int) (tea.Model, tea.Cmd) {
 		logMouse("  clickExplorer x=%d y=%d -> preview table %s", x, y, r.Table)
 		m.explorer.Toggle()
 		m.explorer.ensureVisible(m.sidebarTreeH())
-		colCmd := m.loadColumns(r.Schema, r.Table)
-		m2, inspectCmd := m.inspectTable(r.Table)
-		m = m2
-		return m, tea.Batch(colCmd, inspectCmd)
+		return m.inspectTable(r.Schema, r.Table)
 	case RowColumn:
 		logMouse("  clickExplorer x=%d y=%d -> preview column %s.%s", x, y, r.Table, r.Column)
-		return m.inspectTable(r.Table)
+		return m.inspectTable(r.Schema, r.Table)
 	default:
 		return m, nil
 	}
@@ -454,6 +452,9 @@ func (m Model) clickTable(x, y int, shift bool) (tea.Model, tea.Cmd) {
 	}
 	logMouse("  clickTable y=%d -> select %d", y, abs)
 	t.SetCursor(abs)
+	if c := t.ColAt(x); c >= 0 {
+		t.SetCol(c)
+	}
 	return m, nil
 }
 
