@@ -83,7 +83,7 @@ or a saved NAME. Env DATABASE_URL fills conn when no argument is given.
 	store, err := saved.Load()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "db-peek: warning: saved connections unavailable:", err)
-		store = &saved.Store{}
+		store = saved.New()
 	}
 
 	if *connsF {
