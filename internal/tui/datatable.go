@@ -20,6 +20,7 @@ type dataTable struct {
 	widths []int
 	rows   [][]string
 	cursor int
+	col    int // column cursor (cell editing)
 	offset int
 	hover  int // hovered absolute row, -1 when none
 	width  int
@@ -70,6 +71,7 @@ func (t *dataTable) setData(cols []string, rows [][]string) {
 	if t.cursor < 0 {
 		t.cursor = 0
 	}
+	t.SetCol(t.col)
 	t.hover = -1
 	t.clampOffset()
 }
@@ -109,6 +111,36 @@ func (t *dataTable) Cursor() int { return t.cursor }
 
 func (t *dataTable) SetCursor(n int) {
 	t.cursor = clamp(n, 0, len(t.rows)-1)
+}
+
+// Col is the column cursor. The grid has one for cell editing; nothing
+// else depends on it, so it starts at 0 and is clamped with the data.
+func (t *dataTable) Col() int { return t.col }
+
+func (t *dataTable) SetCol(n int) {
+	if n < 0 {
+		n = 0
+	}
+	if max := len(t.cols) - 1; n > max {
+		n = max
+	}
+	t.col = n
+}
+
+func (t *dataTable) MoveColLeft()  { t.SetCol(t.col - 1) }
+func (t *dataTable) MoveColRight() { t.SetCol(t.col + 1) }
+
+// ColAt maps a content x-offset to a column index, or -1 past the last
+// column. It mirrors RowAt so a click can position both cursors.
+func (t *dataTable) ColAt(x int) int {
+	col := 0
+	for i, w := range t.widths {
+		if x < col+w {
+			return i
+		}
+		col += w
+	}
+	return -1
 }
 
 func (t *dataTable) MoveUp(n int) {
