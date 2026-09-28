@@ -409,9 +409,10 @@ func (m Model) erCanvasView(innerW, innerH int) string {
 		}
 		return "(no ER data — press 5 to load)"
 	}
-	canvas := erRenderCanvasHover(m.erSchema.tables, m.erSchema.links, innerW, innerH, m.erSel, m.hoverER)
+	tables, links, _ := m.erLayoutFor(innerW, innerH)
+	canvas := m.erCanvasFor(innerW, innerH)
 	lines := erSliceViewport(canvas, m.erPanX, m.erPanY, innerW, innerH)
-	if len(m.erSchema.links) == 0 && len(m.erSchema.tables) > 0 {
+	if len(links) == 0 && len(tables) > 0 {
 		if innerH < 1 {
 			innerH = 1
 		}

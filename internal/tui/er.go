@@ -191,7 +191,7 @@ func (m Model) erHit(x, y int) (string, bool) {
 	if m.erIsFocused() {
 		return m.erFocusedHit(x, y)
 	}
-	pos := erGridLayout(m.erSchema.tables, m.paneInnerW(), m.paneInnerH())
+	_, _, pos := m.erLayoutFor(m.paneInnerW(), m.paneInnerH())
 	cx := m.erPanX + x
 	cy := (y - detailTableTop) + m.erPanY
 	for name, r := range pos {
@@ -200,6 +200,15 @@ func (m Model) erHit(x, y int) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// setERSchema installs a new ER schema state and invalidates the render
+// memo. Every mutation of erSchema goes through here: the memo is keyed on
+// erDataGen, so a write that skips the bump would keep drawing the old
+// diagram.
+func (m *Model) setERSchema(s erSchemaState) {
+	m.erSchema = s
+	m.erDataGen++
 }
 
 // erLegacyHit maps border-relative content coords (x = content column,

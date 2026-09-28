@@ -256,14 +256,13 @@ func (m Model) erFocusedCanvasView(innerW, innerH int) string {
 	}
 	header := dimStyle.Render(fitText("diagram · "+m.erCenter, innerW))
 	canvasH := innerH - 1
-	ft, fl := erFocusedSubset(m.erCenter, m.erSchema.tables, m.erSchema.links)
-	if len(ft) == 0 {
+	tables, links, _ := m.erLayoutFor(innerW, canvasH)
+	if len(tables) == 0 {
 		return header + "\n" + strings.Join(erSliceViewport([]string{"(no tables)"}, m.erPanX, m.erPanY, innerW, canvasH), "\n")
 	}
-	pos := erFocusLayout(m.erCenter, ft, fl)
-	canvas := erRenderWithPos(ft, fl, pos, erFocusBoxLinesEx, m.erSel, m.hoverER)
+	canvas := m.erCanvasFor(innerW, canvasH)
 	lines := erSliceViewport(canvas, m.erPanX, m.erPanY, innerW, canvasH)
-	if len(fl) == 0 && len(ft) > 0 {
+	if len(links) == 0 && len(tables) > 0 {
 		note := dimStyle.Render(fitText("(no foreign keys — boxes only)", innerW))
 		if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
 			lines[len(lines)-1] = note
@@ -278,8 +277,7 @@ func (m Model) erFocusedCanvasView(innerW, innerH int) string {
 // erFocusedHit maps viewport coords to a box in the focused layout.
 // Row detailTableTop is the header and never hits.
 func (m Model) erFocusedHit(x, y int) (string, bool) {
-	ft, fl := erFocusedSubset(m.erCenter, m.erSchema.tables, m.erSchema.links)
-	pos := erFocusLayout(m.erCenter, ft, fl)
+	_, _, pos := m.erLayoutFor(m.paneInnerW(), m.paneInnerH())
 	rel := y - detailTableTop
 	if rel <= 0 {
 		return "", false // header row
