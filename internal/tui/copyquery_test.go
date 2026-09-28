@@ -4,8 +4,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+
+	"db-peek/internal/saved"
 )
 
 var errTestClipboard = errors.New("no clipboard")
@@ -23,20 +26,54 @@ func TestCopyQueryFallsBackToFile(t *testing.T) {
 	defer func() { clipboardWriteAll = old }()
 
 	dir := t.TempDir()
-	t.Chdir(dir)
+	useTempCacheDir(t, dir)
 	m := queryTabModel()
 	m.editor.SetText("SELECT ord")
 	m.err = "invalid message format (SQLSTATE 08P01)"
 	status := m.copyQueryDump()
-	body, err := os.ReadFile(filepath.Join(dir, "db-peek-debug.txt"))
+	path := filepath.Join(dir, "db-peek", "last-dump.txt")
+	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("fallback file must exist: %v (status %q)", err, status)
 	}
 	if !strings.Contains(string(body), "SELECT ord") || !strings.Contains(string(body), "08P01") {
 		t.Fatalf("file must contain sql and error, got:\n%s", body)
 	}
-	if !strings.Contains(status, "db-peek-debug.txt") {
+	if !strings.Contains(status, path) {
 		t.Fatalf("status must name the file, got %q", status)
+	}
+	if runtime.GOOS != "windows" {
+		st, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if perm := st.Mode().Perm(); perm != 0o600 {
+			t.Fatalf("dump holds the DSN and must be 0600, got %o", perm)
+		}
+	}
+}
+
+// useTempCacheDir redirects the dump location into dir for one test.
+func useTempCacheDir(t *testing.T, dir string) {
+	t.Helper()
+	old := userCacheDir
+	userCacheDir = func() (string, error) { return dir, nil }
+	t.Cleanup(func() { userCacheDir = old })
+}
+
+// The dump text embeds the DSN in driver errors, so neither the clipboard
+// nor the file may carry the raw conn string or its password.
+func TestScrubConnSecrets(t *testing.T) {
+	conn := "postgres://u:hunter2@h:5432/db"
+	got := scrubConnSecrets("dial "+conn+": password authentication failed", conn)
+	if strings.Contains(got, "hunter2") {
+		t.Fatalf("password leaked: %q", got)
+	}
+	if strings.Contains(got, conn) {
+		t.Fatalf("raw conn string leaked: %q", got)
+	}
+	if !strings.Contains(got, saved.Mask(conn)) {
+		t.Fatalf("masked conn must remain: %q", got)
 	}
 }
 
@@ -106,11 +143,11 @@ func TestCopyQuerySurvivesClipboardPanic(t *testing.T) {
 	defer func() { clipboardWriteAll = old }()
 
 	dir := t.TempDir()
-	t.Chdir(dir)
+	useTempCacheDir(t, dir)
 	m := queryTabModel()
 	m.editor.SetText("SELECT 1")
 	status := m.copyQueryDump()
-	if _, err := os.Stat(filepath.Join(dir, "db-peek-debug.txt")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "db-peek", "last-dump.txt")); err != nil {
 		t.Fatalf("panic must fall back to file, status %q: %v", status, err)
 	}
 }
