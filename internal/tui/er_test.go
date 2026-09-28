@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+
 	dbpkg "db-peek/internal/db"
 )
 
@@ -27,10 +29,10 @@ func TestERViewThreeBoxes(t *testing.T) {
 func TestERHitBox(t *testing.T) {
 	m := browseModel(t)
 	m.table = "orders"
-	m.erSchema = erSchemaState{loaded: true,
+	m.setERSchema(erSchemaState{loaded: true,
 		tables: []erTable{{name: "customers"}, {name: "orders"}},
 		links:  []dbpkg.ForeignKey{{FromTable: "orders", FromColumn: "customer_id", ToTable: "customers", ToColumn: "id"}},
-	}
+	})
 	m.width = 120
 	m.sidebarW = 34
 	name, ok := m.erHit(1, 6)
@@ -44,7 +46,7 @@ func TestERHitBox(t *testing.T) {
 
 func TestERViewUsesCanvas(t *testing.T) {
 	m := browseModel(t)
-	m.erSchema = erSchemaState{loaded: true, tables: []erTable{{name: "orders", cols: []dbpkg.Column{{Name: "id", Extra: "PK(1)"}}, pk: map[string]bool{"id": true}}}}
+	m.setERSchema(erSchemaState{loaded: true, tables: []erTable{{name: "orders", cols: []dbpkg.Column{{Name: "id", Extra: "PK(1)"}}, pk: map[string]bool{"id": true}}}})
 	out := m.erView(60, 12)
 	if !strings.Contains(out, "orders") || !strings.Contains(out, "🔑") {
 		t.Fatalf("canvas view missing box markers:\n%s", out)
@@ -97,11 +99,11 @@ func TestERPanClamp(t *testing.T) {
 
 func TestEREmptyStates(t *testing.T) {
 	m := browseModel(t)
-	m.erSchema = erSchemaState{loaded: true}
+	m.setERSchema(erSchemaState{loaded: true})
 	if out := m.erView(60, 10); !strings.Contains(out, "(no tables)") {
 		t.Fatalf("want no-tables hint, got:\n%s", out)
 	}
-	m.erSchema = erSchemaState{loaded: true, tables: []erTable{{name: "t", cols: []dbpkg.Column{{Name: "id"}}}}}
+	m.setERSchema(erSchemaState{loaded: true, tables: []erTable{{name: "t", cols: []dbpkg.Column{{Name: "id"}}}}})
 	if out := m.erView(60, 10); !strings.Contains(out, "(no foreign keys") {
 		t.Fatalf("want fk-less hint, got:\n%s", out)
 	}
@@ -178,8 +180,8 @@ func TestERCanvasSelectedDistinct(t *testing.T) {
 
 func TestERCanvasHoverDistinct(t *testing.T) {
 	m := browseModel(t)
-	m.erSchema = erSchemaState{loaded: true, tables: erBorderTables(),
-		links: []dbpkg.ForeignKey{{FromTable: "orders", FromColumn: "id", ToTable: "customers", ToColumn: "id"}}}
+	m.setERSchema(erSchemaState{loaded: true, tables: erBorderTables(),
+		links: []dbpkg.ForeignKey{{FromTable: "orders", FromColumn: "id", ToTable: "customers", ToColumn: "id"}}})
 	m.erSel = "orders"
 	m.hoverER = "customers"
 	out := render256(m.erCanvasView(80, 20))
@@ -231,5 +233,41 @@ func TestERSchemaTotalFailureFallsBack(t *testing.T) {
 	}
 	if got.err == "" {
 		t.Fatal("total failure must still record m.err footer")
+	}
+}
+
+// Entering the ER tab must kick off the per-table FK load: without it
+// erLinks stays empty and the pre-load view can only say "(no foreign keys)".
+func TestEnteringERTabLoadsTableForeignKeys(t *testing.T) {
+	m := browseModel(t)
+	m.db = openMemoryDB(t)
+	m.table = "orders"
+	m.erCache = map[string][]dbpkg.ForeignKey{
+		"orders": {{FromTable: "orders", FromColumn: "customer_id", ToTable: "customers", ToColumn: "id"}},
+	}
+	m.erSchema.loaded = false
+
+	cmd := m.setTab(4)
+	if cmd == nil {
+		t.Fatal("entering the ER tab must issue a command")
+	}
+	batch, ok := cmd().(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("want a batch of commands, got %T", cmd())
+	}
+	var got erLoadedMsg
+	found := false
+	for _, sub := range batch {
+		if msg, ok := sub().(erLoadedMsg); ok {
+			got, found = msg, true
+		}
+	}
+	if !found {
+		t.Fatal("batch must carry the per-table foreign keys")
+	}
+	nm, _ := m.Update(got)
+	out := nm.(Model).erView(80, 20)
+	if !strings.Contains(out, "customers") {
+		t.Fatalf("ER view must show the neighbour table, got:\n%s", out)
 	}
 }

@@ -32,7 +32,7 @@ func localStateModel(t *testing.T) Model {
 	m.buildTables()
 	m.count = 7
 	m.status = "1 tables • test (sqlite)"
-	m.erSchema = erSchemaState{loaded: true, tables: []erTable{{name: "users"}}}
+	m.setERSchema(erSchemaState{loaded: true, tables: []erTable{{name: "users"}}})
 	m.erCache = map[string][]db.ForeignKey{}
 	m.erCenter, m.erSel = "users", "users"
 	m.querySample = &db.Sample{Columns: []string{"a"}}
@@ -76,14 +76,27 @@ func TestStaleConnMessagesDropped(t *testing.T) {
 			m.explorer.Schemas[si].Tables[ti].Count = -1
 		}
 	}
-	u, _ := m.Update(tableCountMsg{schema: "public", table: "customers", count: 777, conn: old})
+	u, _ := m.Update(countsLoadedMsg{
+		schema: "public",
+		counts: map[string]int64{"customers": 777},
+		errs:   map[string]bool{},
+		conn:   old,
+	})
 	m = u.(Model)
 	if tb, _ := m.explorer.tableByName("public", "customers"); tb.CountOK || tb.Count == 777 {
 		t.Fatalf("stale-conn count must be dropped, got %+v", tb)
 	}
+	if _, ok := m.counts["customers"]; ok {
+		t.Fatal("stale-conn counts must not populate the cache")
+	}
 
-	// Columns reply from the old connection must not populate the tree.
-	u, _ = m.Update(columnsLoadedMsg{schema: "public", table: "orders", columns: []db.Column{{Name: "stale"}}, conn: old})
+	// Column reply from the old connection must not populate the tree.
+	u, _ = m.Update(detailLoadedMsg{
+		table:  "orders",
+		schema: "public",
+		cols:   []db.Column{{Name: "stale"}},
+		conn:   old,
+	})
 	m = u.(Model)
 	if tb, _ := m.explorer.tableByName("public", "orders"); len(tb.Columns) != 2 || tb.Columns[0].Name != "id" {
 		t.Fatalf("stale-conn columns must be dropped, got %+v", tb.Columns)

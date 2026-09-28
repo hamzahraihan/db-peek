@@ -68,7 +68,7 @@ func TestERFocusBoxesPKFK(t *testing.T) {
 func TestERFocusedViewExcludesUnrelated(t *testing.T) {
 	m := browseModel(t)
 	tables, links := focusFixture()
-	m.erSchema = erSchemaState{loaded: true, tables: tables, links: links}
+	m.setERSchema(erSchemaState{loaded: true, tables: tables, links: links})
 	m.erFocus = true
 	m.erCenter = "orders"
 	m.erSel = "orders"
@@ -92,7 +92,7 @@ func TestERFocusedViewExcludesUnrelated(t *testing.T) {
 func TestERFocusToggle(t *testing.T) {
 	m := browseModel(t)
 	tables, links := focusFixture()
-	m.erSchema = erSchemaState{loaded: true, tables: tables, links: links}
+	m.setERSchema(erSchemaState{loaded: true, tables: tables, links: links})
 	m.erFocus = true
 	m.erCenter = "orders"
 	m.erSel = "orders"
@@ -120,7 +120,7 @@ func TestERFocusToggle(t *testing.T) {
 func TestERRecenterStaysOnER(t *testing.T) {
 	m := browseModel(t)
 	tables, links := focusFixture()
-	m.erSchema = erSchemaState{loaded: true, tables: tables, links: links}
+	m.setERSchema(erSchemaState{loaded: true, tables: tables, links: links})
 	m.erFocus = true
 	m.erCenter = "orders"
 	m.erSel = "customers"
@@ -153,7 +153,7 @@ func TestERRecenterStaysOnER(t *testing.T) {
 func TestERFocusedHit(t *testing.T) {
 	m := browseModel(t)
 	tables, links := focusFixture()
-	m.erSchema = erSchemaState{loaded: true, tables: tables, links: links}
+	m.setERSchema(erSchemaState{loaded: true, tables: tables, links: links})
 	m.erFocus = true
 	m.erCenter = "orders"
 	m.erSel = "orders"
@@ -184,7 +184,7 @@ func TestERFocusedHit(t *testing.T) {
 func TestERNextBoxUsesVisible(t *testing.T) {
 	m := browseModel(t)
 	tables, links := focusFixture()
-	m.erSchema = erSchemaState{loaded: true, tables: tables, links: links}
+	m.setERSchema(erSchemaState{loaded: true, tables: tables, links: links})
 	m.erFocus = true
 	m.erCenter = "orders"
 	m.erSel = "orders"

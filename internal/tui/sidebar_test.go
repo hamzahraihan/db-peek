@@ -17,6 +17,7 @@ func browseModel(t *testing.T) Model {
 	t.Helper()
 	s := &saved.Store{Path: "./nonexistent-connections.json"}
 	m := New("", s)
+	m.history = &saved.History{} // never read the developer's real history
 	m.screen = screenBrowse
 	m.loading = false
 	m.width, m.height = 100, 30
@@ -26,50 +27,109 @@ func browseModel(t *testing.T) Model {
 	return m
 }
 
-func TestTableCountMsgApplies(t *testing.T) {
+func TestCountsLoadedMsgApplies(t *testing.T) {
 	m := browseModel(t)
 	m.explorer = fixtureExplorer()
-	u, _ := m.Update(tableCountMsg{schema: "public", table: "customers", count: 777})
+	u, _ := m.Update(countsLoadedMsg{
+		schema: "public",
+		counts: map[string]int64{"customers": 777, "orders": 12},
+		errs:   map[string]bool{},
+	})
 	m = u.(Model)
 	for _, s := range m.explorer.Schemas {
 		for _, tb := range s.Tables {
-			if tb.Name == "customers" && (!tb.CountOK || tb.Count != 777) {
-				t.Fatalf("count not applied: %+v", tb)
+			switch tb.Name {
+			case "customers", "orders":
+				if !tb.CountOK || tb.CountErr {
+					t.Fatalf("count not applied: %+v", tb)
+				}
+			}
+			if m.counts[tb.Name] != tb.Count {
+				t.Fatalf("m.counts must mirror the sidebar: %+v vs %d", tb, m.counts[tb.Name])
 			}
 		}
 	}
 }
 
-func TestTableCountErrLatchesNoRetry(t *testing.T) {
+func TestCountsLoadedMsgLatchesErr(t *testing.T) {
 	m := browseModel(t)
 	m.explorer = fixtureExplorer()
-	// Make customers the only pending count; orders stays OK.
-	for si := range m.explorer.Schemas {
-		for ti := range m.explorer.Schemas[si].Tables {
-			if m.explorer.Schemas[si].Tables[ti].Name == "customers" {
-				m.explorer.Schemas[si].Tables[ti].Count = -1
-				m.explorer.Schemas[si].Tables[ti].CountOK = false
-				m.explorer.Schemas[si].Tables[ti].CountErr = false
-			}
-		}
-	}
-	u, cmd := m.Update(tableCountMsg{schema: "public", table: "customers", err: errTestCount})
+	u, cmd := m.Update(countsLoadedMsg{
+		schema: "public",
+		counts: map[string]int64{"orders": 3},
+		errs:   map[string]bool{"customers": true},
+	})
 	m = u.(Model)
 	tb, ok := m.explorer.tableByName("public", "customers")
 	if !ok || !tb.CountErr {
 		t.Fatalf("err must latch CountErr: %+v ok=%v", tb, ok)
 	}
+	if _, cached := m.counts["customers"]; cached {
+		t.Fatal("a failed count must not enter the cache")
+	}
 	if out := m.explorer.Render(34, 20); !strings.Contains(out, "?") {
 		t.Fatalf("errored count must render ?: \n%s", out)
 	}
 	if cmd != nil {
-		t.Fatal("errored count must not re-queue a load (want nil cmd)")
+		t.Fatal("the batch handler issues no follow-up command (want nil)")
 	}
-	// A second identical err must also dispatch no further cmd.
-	u2, cmd2 := m.Update(tableCountMsg{schema: "public", table: "customers", err: errTestCount})
-	_ = u2
-	if cmd2 != nil {
-		t.Fatal("second err must not retry either (want nil cmd)")
+}
+
+func TestCountsLoadedMsgStaleConnDropped(t *testing.T) {
+	m := browseModel(t)
+	m.explorer = fixtureExplorer()
+	m.connSeq = 3
+	u, _ := m.Update(countsLoadedMsg{
+		schema: "public",
+		counts: map[string]int64{"customers": 777},
+		errs:   map[string]bool{},
+		conn:   2,
+	})
+	m = u.(Model)
+	if tb, _ := m.explorer.tableByName("public", "customers"); tb.Count == 777 {
+		t.Fatalf("stale-conn counts must be dropped: %+v", tb)
+	}
+}
+
+// The exact count arrives after the grid, so a stale or mismatched reply
+// must leave m.count at the unknown marker instead of lying about the size.
+func TestDetailCountMsgAppliesOnlyForOpenTable(t *testing.T) {
+	m := browseModel(t)
+	m.table = "orders"
+	m.detailSeq = 4
+	m.count = -1
+
+	u, _ := m.Update(detailCountMsg{table: "orders", count: 5, seq: 3, conn: m.connSeq})
+	if m2 := u.(Model); m2.count != -1 {
+		t.Fatalf("stale seq must not apply, got %d", m2.count)
+	}
+	u, _ = m.Update(detailCountMsg{table: "customers", count: 5, seq: 4, conn: m.connSeq})
+	if m2 := u.(Model); m2.count != -1 {
+		t.Fatalf("a different table must not apply, got %d", m2.count)
+	}
+	u, _ = m.Update(detailCountMsg{table: "orders", count: 5, seq: 4, conn: m.connSeq + 1})
+	if m2 := u.(Model); m2.count != -1 {
+		t.Fatalf("a stale connection must not apply, got %d", m2.count)
+	}
+	u, _ = m.Update(detailCountMsg{table: "orders", count: 5, seq: 4, conn: m.connSeq})
+	if m2 := u.(Model); m2.count != 5 {
+		t.Fatalf("matching reply must apply, got %d", m2.count)
+	}
+}
+
+// A table whose count the sidebar already fetched opens with no query at
+// all: the command must answer from m.counts even on a closed database.
+func TestLoadCountUsesSidebarCache(t *testing.T) {
+	m := browseModel(t)
+	m.db = openMemoryDB(t)
+	m.db.Close()
+	m.counts = map[string]int64{"orders": 42}
+	msg, ok := m.loadCount(t.Context(), "orders")().(detailCountMsg)
+	if !ok {
+		t.Fatalf("want a detailCountMsg, got %T", msg)
+	}
+	if msg.count != 42 || msg.err != nil {
+		t.Fatalf("cached count must answer without a query: %+v", msg)
 	}
 }
 
@@ -305,15 +365,35 @@ func TestColumnEnterPreviewsParent(t *testing.T) {
 
 func TestColumnsErrCollapsesTable(t *testing.T) {
 	m := browseModel(t)
-	// orders starts expanded in the fixture; an err must collapse it.
-	u, _ := m.Update(columnsLoadedMsg{schema: "public", table: "orders", err: errTestCount})
+	// orders starts expanded in the fixture; a column failure must collapse it.
+	u, _ := m.Update(detailLoadedMsg{
+		table:   "orders",
+		schema:  "public",
+		err:     errTestCount,
+		colsErr: errTestCount,
+	})
 	m = u.(Model)
 	if m.err == "" {
 		t.Fatal("err must set m.err")
 	}
 	tb, ok := m.explorer.tableByName("public", "orders")
 	if !ok || tb.Expanded {
-		t.Fatalf("err must collapse table node, got %+v ok=%v", tb, ok)
+		t.Fatalf("column failure must collapse table node, got %+v ok=%v", tb, ok)
+	}
+}
+
+// Only a column failure collapses the node: a rows/indexes failure must
+// leave the tree alone, or an unrelated error silently drops the schema.
+func TestNonColumnErrKeepsTableExpanded(t *testing.T) {
+	m := browseModel(t)
+	u, _ := m.Update(detailLoadedMsg{table: "orders", schema: "public", err: errTestCount})
+	m = u.(Model)
+	if m.err == "" {
+		t.Fatal("err must set m.err")
+	}
+	tb, ok := m.explorer.tableByName("public", "orders")
+	if !ok || !tb.Expanded {
+		t.Fatalf("a non-column failure must not collapse the node, got %+v ok=%v", tb, ok)
 	}
 }
 
