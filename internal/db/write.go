@@ -2,7 +2,9 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -238,6 +240,68 @@ func HintForError(connStr string, err error) string {
 	}
 	return " (protocol error — retry with the direct database connection)"
 }
+
+// Explain returns the engine-appropriate EXPLAIN SQL for q. SQLite has
+// no EXPLAIN ANALYZE, so analyze is ignored there.
+func (d *DB) Explain(q string, analyze bool) string {
+	q = trimStatement(q)
+	switch d.Driver {
+	case Postgres:
+		if analyze {
+			return "EXPLAIN (ANALYZE, BUFFERS) " + q
+		}
+		return "EXPLAIN " + q
+	case MySQL:
+		if analyze {
+			return "EXPLAIN ANALYZE " + q
+		}
+		return "EXPLAIN " + q
+	default:
+		return "EXPLAIN QUERY PLAN " + q
+	}
+}
+
+// Placeholder returns the driver-specific bind marker for the i-th
+// (1-based) parameter: Postgres numbers them, MySQL and SQLite use "?".
+func (d Driver) Placeholder(i int) string {
+	if d == Postgres {
+		return "$" + strconv.Itoa(i)
+	}
+	return "?"
+}
+
+// UpdateCell issues a single-parameter UPDATE identified by the full
+// primary key. It runs as one autocommit statement, which is atomic on
+// every supported engine.
+//
+// pkVals must carry the driver's own value types, not display strings:
+// Postgres has no implicit cast, so binding a string for a bigint key
+// fails with "operator does not exist: bigint = text".
+func (d *DB) UpdateCell(ctx context.Context, table string, pk []string, pkVals []any, col string, val any) (int64, error) {
+	if len(pk) == 0 || len(pk) != len(pkVals) {
+		return 0, fmt.Errorf("update %s: primary key value count does not match the key", table)
+	}
+	q := d.Driver.QuoteIdent
+	var b strings.Builder
+	fmt.Fprintf(&b, "UPDATE %s SET %s = %s WHERE ", q(table), q(col), d.Driver.Placeholder(1))
+	for i, k := range pk {
+		if i > 0 {
+			b.WriteString(" AND ")
+		}
+		fmt.Fprintf(&b, "%s = %s", q(k), d.Driver.Placeholder(i+2))
+	}
+	args := make([]any, 0, len(pkVals)+1)
+	args = append(args, val)
+	for _, v := range pkVals {
+		args = append(args, v)
+	}
+	res, err := d.SQL.ExecContext(ctx, b.String(), args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // RunUserQuery routes one editor statement: row-returning statements go
 // through Query (grid), everything else through ExecStmt (rows affected,
 // returned as n with a nil sample). n is -1 for the query path.

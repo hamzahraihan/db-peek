@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"slices"
+	"sort"
+	"strconv"
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -179,7 +182,11 @@ type Index struct {
 type Sample struct {
 	Columns []string
 	Rows    [][]string
-	Total   int64 // -1 when unknown
+	// Raw holds the untruncated driver values, parallel to Rows; nil is
+	// SQL NULL. Rows is display text (truncated to 60 chars), so export
+	// and cell editing must read this instead or lose data.
+Raw  [][]any
+	Total int64 // -1 when unknown
 }
 
 // ListTables returns user tables ordered by name, skipping
@@ -292,6 +299,71 @@ WHERE table_schema = DATABASE() AND table_name = ? ORDER BY ordinal_position`, t
 		}
 		return out, rows.Err()
 	}
+}
+
+// PrimaryKey returns the table's primary-key columns in key order, or
+// nil when it has none. Cell editing needs the key to address exactly
+// one row, so "no key" is a normal answer, not an error.
+func (d *DB) PrimaryKey(ctx context.Context, table string) ([]string, error) {
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	switch d.Driver {
+	case Postgres:
+		rows, err = d.SQL.QueryContext(ctx, `
+SELECT a.attname
+FROM pg_index i
+JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+WHERE i.indrelid = $1::regclass AND i.indisprimary
+ORDER BY array_position(i.indkey, a.attnum)`, table)
+	case MySQL:
+		rows, err = d.SQL.QueryContext(ctx, `
+SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE
+WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = 'PRIMARY'
+ORDER BY ORDINAL_POSITION`, table)
+	default:
+		// PRAGMA table_info already encodes the key as Extra = "PK(n)";
+		// reuse it rather than issuing a second statement.
+		cols, cerr := d.Columns(ctx, table)
+		if cerr != nil {
+			return nil, cerr
+		}
+		type pkCol struct {
+			name string
+			pos  int
+		}
+		var keys []pkCol
+		for _, c := range cols {
+			if !strings.HasPrefix(c.Extra, "PK(") {
+				continue
+			}
+			pos, perr := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(c.Extra, "PK("), ")"))
+			if perr != nil {
+				continue
+			}
+			keys = append(keys, pkCol{name: c.Name, pos: pos})
+		}
+		sort.Slice(keys, func(i, j int) bool { return keys[i].pos < keys[j].pos })
+		out := make([]string, len(keys))
+		for i, k := range keys {
+			out[i] = k.name
+		}
+		return out, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
 }
 
 // Indexes returns index metadata for one table.
@@ -506,10 +578,19 @@ func (d *DB) queryToSample(ctx context.Context, q string) (*Sample, error) {
 			return nil, err
 		}
 		rec := make([]string, len(cols))
+		raw := make([]any, len(cols))
 		for i, v := range vals {
 			rec[i] = FormatCell(v)
+			// Clone []byte: the driver may recycle the backing array
+			// once Scan returns, and Raw outlives this loop.
+			if b, ok := v.([]byte); ok {
+				raw[i] = slices.Clone(b)
+				continue
+			}
+			raw[i] = v
 		}
 		s.Rows = append(s.Rows, rec)
+		s.Raw = append(s.Raw, raw)
 		if len(s.Rows) >= 200 {
 			break
 		}
