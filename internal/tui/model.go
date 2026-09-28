@@ -1,9 +1,7 @@
 package tui
 
-// Model is the single source of UI state (Elm: Model). It is mutated only
-// by Update transitions and read by View; async work arrives as messages.
-
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -26,6 +24,8 @@ const (
 	screenBrowse // sidebar table list + detail preview in one split
 )
 
+// Model is the single source of UI state (Elm: Model). It is mutated only
+// by Update transitions and read by View; async work arrives as messages.
 type Model struct {
 	db      *dbpkg.DB
 	store   *saved.Store
@@ -57,17 +57,22 @@ type Model struct {
 	indexes     []dbpkg.Index
 	sample      *dbpkg.Sample
 	count       int64
-	page        int // 0-based page in the rows tab
-	pageSize    int // rows per page: one of pageSizes
-	detailSeq   int // guards against stale async detail/page loads
-	loading     bool
-	err         string
-	status      string
-	width       int
-	height      int
-	colTable    dataTable
-	idxTable    dataTable
-	rowTable    dataTable
+	// counts caches the sidebar's approximate counts per table name so
+	// opening a table whose count is already known costs no query.
+	counts    map[string]int64
+	page      int // 0-based page in the rows tab
+	pageSize  int // rows per page: one of pageSizes
+	detailSeq int // guards against stale async detail/page loads
+	loading   bool
+	// cancelInFlight aborts the newest async DB command (esc).
+	cancelInFlight context.CancelFunc
+	err            string
+	status         string
+	width          int
+	height         int
+	colTable       dataTable
+	idxTable       dataTable
+	rowTable       dataTable
 
 	editor            Editor
 	queryFocus        int // 0 editor, 1 results (only meaningful when tab==3)
@@ -80,17 +85,52 @@ type Model struct {
 	qbufs             []queryBuffer // query buffers; active working copy above mirrors qbufs[qcur]
 	qcur              int
 	nextQbufID        int
+	// hlMemo caches the SQL highlighting of the editor buffer: the lexer
+	// runs over every line, but the editor only draws 8 rows per frame.
+	hlMemo *hlMemo
+
 	// SQL autocomplete popup (query tab, editor focused only).
 	showComplete   bool
 	completeIdx    int
 	completeItems  []completeItem
 	completeStart  int // rune offset where the current prefix starts
 	completePrefix string
+	// explorerGen and colsGen invalidate ccMemo: the first when the tree's
+	// tables/columns change, the second when m.cols is rewritten.
+	explorerGen int
+	colsGen     int
+	ccMemo      *completionMemo
+	// Query history: ctrl+p/ctrl+n walk it. histIdx -1 is the live buffer.
+	history  *saved.History
+	histIdx  int
+	histOrig string
+	// restoreTable/Filter/Tab come from session.json and are applied once
+	// the explorer nodes exist.
+	restoreTable  string
+	restoreTab    int
+	restoreFilter string
+	// Result export: E opens a path prompt drawn over the status line.
+	exporting    bool
+	exportInput textinput.Model
+	// pendingExplain/pendingAnalyze apply to the next run only; the
+	// editor buffer is never rewritten with an EXPLAIN prefix.
+	pendingExplain bool
+	pendingAnalyze bool
+	// Cell editing (rows tab): `e` edits the cursor's cell in place.
+	// Named cellEditing because Model.editing is the saved-profile editor.
+	cellEditing bool
+	cellInput   textinput.Model
+	// pkMemoFor/pkMemoCols cache the current table's primary key.
+	pkMemoFor  string
+	pkMemoCols []string
 
 	erLinks  []dbpkg.ForeignKey
 	erSeq    int
 	erOffset int
-	erCache  map[string][]dbpkg.ForeignKey
+	// erDataGen bumps whenever erSchema changes, invalidating the render memo.
+	erDataGen int
+	erMemo    *erMemo
+	erCache   map[string][]dbpkg.ForeignKey
 
 	erSchema erSchemaState
 	erPanX   int
@@ -136,7 +176,7 @@ type erSchemaState struct {
 
 func New(connStr string, store *saved.Store) Model {
 	if store == nil {
-		store = &saved.Store{}
+		store = saved.New()
 	}
 	nameInput := textinput.New()
 	nameInput.Placeholder = "prod-pg"
@@ -180,6 +220,12 @@ func New(connStr string, store *saved.Store) Model {
 	cl.SetShowHelp(false)
 	cl.Filter = customFilter
 
+	// History is a convenience: a missing or unreadable file must never
+	// stop the app from starting, so fall back to an empty store.
+	history, err := saved.LoadHistory()
+	if err != nil || history == nil {
+		history = &saved.History{}
+	}
 	m := Model{
 		connStr: strings.TrimSpace(connStr), store: store,
 		conns: cl, explorer: NewExplorer("", []string{}), count: -1, pageSize: 10, hoverTab: -1,
@@ -187,9 +233,18 @@ func New(connStr string, store *saved.Store) Model {
 		connsItemH: cdelegate.Height() + cdelegate.Spacing(),
 		editor:     NewEditor(),
 		erFocus:    true, queryAffected: -1,
+		history: history, histIdx: -1,
 	}
+	m.erMemo = &erMemo{}
+	m.hlMemo = &hlMemo{}
+	m.ccMemo = &completionMemo{}
 	m.ensureQueryBufs()
 	m.refreshConns()
+	// A previous session seeds the buffers, page size and pending tree
+	// selection. A missing or corrupt file just means a fresh start.
+	if sess, err := loadSessionFunc(); err == nil {
+		m.applySession(sess)
+	}
 	if m.connStr == "" {
 		m.screen = screenConns
 	} else {
@@ -329,7 +384,14 @@ func (m *Model) setTab(i int) tea.Cmd {
 		if len(names) == 0 && m.table != "" {
 			names = []string{m.table}
 		}
-		return m.loadERSchema("", names)
+		// The per-table FK load and the schema load must share one
+		// cancellable context: constructing a second would cancel the
+		// first, leaving the legacy view stuck on "(no foreign keys)".
+		ctx := m.newOpContext(15 * time.Second)
+		if m.table != "" {
+			return tea.Batch(m.loadERCtx(ctx, m.table), m.loadERSchemaCtx(ctx, "", names))
+		}
+		return m.loadERSchemaCtx(ctx, "", names)
 	}
 	m.sizeTables()
 	return nil
