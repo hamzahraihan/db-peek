@@ -9,7 +9,7 @@ import (
 )
 
 func TestHelpRegistryCoversHandlers(t *testing.T) {
-	handled := []string{"up", "k", "down", "j", "left", "right", "enter", "/", "r", "c", "esc", "q", "tab", "1", "2", "3", "4", "5", "n", "p", "s", "pgup", "pgdown", "ctrl+u", "ctrl+d", "ctrl+r", "g", "G", "home", "end", "f5", "?", "a", "e", "d", "backspace", "h", "l", "shift+tab"}
+	handled := []string{"up", "k", "down", "j", "left", "right", "enter", "/", "r", "c", "esc", "q", "tab", "1", "2", "3", "4", "5", "n", "p", "s", "pgup", "pgdown", "ctrl+u", "ctrl+d", "ctrl+r", "g", "G", "home", "end", "f5", "?", "a", "e", "d", "backspace", "h", "l", "shift+tab", "E", ",", ".", "ctrl+p", "ctrl+n", "ctrl+e", "ctrl+y"}
 	have := map[string]bool{}
 	for _, b := range keyRegistry {
 		if b.Key == "/" {

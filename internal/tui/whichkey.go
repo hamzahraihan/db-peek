@@ -54,6 +54,12 @@ var keyRegistry = []KeyBinding{
 	{"H/L", "prev/next query buffer", "Query-results"},
 	{"t", "new query buffer", "Query-results"},
 	{"X", "close query buffer", "Query-results"},
+	{"esc", "cancel running query", "Global"},
+	{"ctrl+p/ctrl+n", "history prev/next", "Query editor"},
+	{"ctrl+e/ctrl+y", "explain / explain analyze", "Query editor"},
+	{"E", "export results", "Detail"},
+	{",/.", "prev/next column", "Detail"},
+	{"e", "edit cell (rows tab)", "Detail"},
 	{"?", "this help", "Global"},
 	{"a/e/d", "add/edit/forget connection", "Connections"},
 	{"enter", "connect", "Connections"},
@@ -162,25 +168,13 @@ func (m Model) helpContentLines() []string {
 			}
 		}
 	}
-	// Section heights (header + rows); pick the prefix split that best
-	// balances the two columns.
+	// Section heights (header + rows).
 	heights := make([]int, len(groups))
 	total := 0
 	for i, g := range groups {
 		heights[i] = 1 + len(g.rows)
 		total += heights[i]
 	}
-	split, best := 0, total
-	for k := 1; k < len(groups); k++ {
-		left := 0
-		for _, h := range heights[:k] {
-			left += h
-		}
-		if taller := max(left, total-left); taller < best {
-			best, split = taller, k
-		}
-	}
-	lines := []string{helpTitleStyle.Render("Keybindings")}
 	renderCol := func(list []int, budget int) (blk []string, w int) {
 		for _, gi := range list {
 			blk = append(blk, helpHeaderStyle.Render(groups[gi].header))
@@ -197,57 +191,124 @@ func (m Model) helpContentLines() []string {
 		}
 		return blk, w
 	}
-	if split > 0 {
-		const gutter = 4
-		budget := (maxW - gutter) / 2
-		if budget > 0 {
-			idxA, idxB := make([]int, 0, split), make([]int, 0, len(groups)-split)
-			for i := range groups {
-				if i < split {
-					idxA = append(idxA, i)
-				} else {
-					idxB = append(idxB, i)
-				}
-			}
-			colA, wA := renderCol(idxA, budget)
-			colB, wB := renderCol(idxB, budget)
-			if wA+wB+gutter <= maxW {
-				for i := 0; i < max(len(colA), len(colB)); i++ {
-					a, b := "", ""
-					if i < len(colA) {
-						a = colA[i]
-					}
-					if i < len(colB) {
-						b = colB[i]
-					}
-					if aw := lipgloss.Width(a); aw < wA {
-						a += strings.Repeat(" ", wA-aw)
-					}
-					if b != "" {
-						if bw := lipgloss.Width(b); bw < wB {
-							b += strings.Repeat(" ", wB-bw)
-						}
-					}
-					if b == "" {
-						lines = append(lines, a)
-					} else {
-						lines = append(lines, a+strings.Repeat(" ", gutter)+b)
-					}
-				}
-				lines = append(lines, helpFooter(maxW)...)
-				return lines
-			}
+	// Sections flow into side-by-side columns so the box stays compact and
+	// the UI behind it remains visible. Add a column whenever two would
+	// overflow the terminal, then take the most balanced partition that
+	// still fits both the width and the height budget.
+	const gutter = 4
+	avail := m.helpBodyBudget()
+	for ncols := 2; ncols <= len(groups); ncols++ {
+		budget := (maxW - gutter*(ncols-1)) / ncols
+		if budget <= 0 {
+			continue
 		}
+		parts := balancedPartition(heights, ncols)
+		if partitionHeight(heights, parts) > avail {
+			continue
+		}
+		cols := make([][]string, ncols)
+		ws := make([]int, ncols)
+		width := 0
+		for c, part := range parts {
+			cols[c], ws[c] = renderCol(part, budget)
+			width += ws[c]
+		}
+		if width+gutter*(ncols-1) > maxW {
+			continue
+		}
+		lines := []string{helpTitleStyle.Render("Keybindings")}
+		for i := range partitionHeight(heights, parts) {
+			var b strings.Builder
+			for c, col := range cols {
+				if i >= len(col) {
+					continue
+				}
+				if c > 0 {
+					b.WriteString(strings.Repeat(" ", gutter))
+				}
+				line := col[i]
+				if w := lipgloss.Width(line); w < ws[c] {
+					line += strings.Repeat(" ", ws[c]-w)
+				}
+				b.WriteString(line)
+			}
+			lines = append(lines, b.String())
+		}
+		lines = append(lines, helpFooter(maxW)...)
+		return lines
 	}
-	// Narrow fallback (or a single section): one stacked column.
+	// Narrow fallback: one stacked column.
 	idx := make([]int, 0, len(groups))
 	for i := range groups {
 		idx = append(idx, i)
 	}
 	col, _ := renderCol(idx, maxW)
+	lines := []string{helpTitleStyle.Render("Keybindings")}
 	lines = append(lines, col...)
 	lines = append(lines, helpFooter(maxW)...)
 	return lines
+}
+
+// balancedPartition splits groups into ncols contiguous parts of as
+// equal height as the section heights allow.
+func balancedPartition(heights []int, ncols int) [][]int {
+	n := len(heights)
+	best := make([][]int, ncols)
+	bestCost := 1 << 30
+	cur := make([][]int, ncols)
+	var walk func(i, c, sum int)
+	walk = func(i, c, sum int) {
+		if c == ncols-1 {
+			for k := i; k < n; k++ {
+				cur[c] = append(cur[c], k)
+			}
+			rest := 0
+			for k := i; k < n; k++ {
+				rest += heights[k]
+			}
+			if cost := max(sum, rest); cost < bestCost {
+				bestCost = cost
+				for j := range best {
+					best[j] = append(best[j][:0], cur[j]...)
+				}
+			}
+			cur[c] = cur[c][:0]
+			return
+		}
+		for k := i; k < n; k++ {
+			cur[c] = append(cur[c], k)
+			walk(k+1, c+1, sum+heights[k])
+			cur[c] = cur[c][:0]
+		}
+	}
+	walk(0, 0, 0)
+	return best
+}
+
+// partitionHeight is the tallest column a partition produces, in rows.
+func partitionHeight(heights []int, parts [][]int) int {
+	tallest := 0
+	for _, part := range parts {
+		h := 0
+		for _, gi := range part {
+			h += heights[gi]
+		}
+		if h > tallest {
+			tallest = h
+		}
+	}
+	return tallest
+}
+
+// helpBodyBudget is how many body rows the overlay may use before it
+// would cover the whole screen: terminal height minus the rounded
+// border, the title and the anchored footer.
+func (m Model) helpBodyBudget() int {
+	avail := m.height - 2 /*borders*/ - 1 /*title*/ - 2 /*footer + separator*/
+	if avail < 1 {
+		return 1
+	}
+	return avail
 }
 
 // helpFooter renders the anchored dismissal hint with a separator above it.
