@@ -90,9 +90,9 @@ func (m Model) detailView() string {
 					if m.queryAffected == 1 {
 						unit = "row"
 					}
-					b.WriteString(renderStatus(fmt.Sprintf("%d %s affected • %d ms", m.queryAffected, unit, m.queryMs), m.paneW()) + "\n")
+					b.WriteString(m.exportOverlayLine(renderStatus(fmt.Sprintf("%d %s affected • %d ms", m.queryAffected, unit, m.queryMs), m.paneW())) + "\n")
 				} else {
-					b.WriteString(renderStatus("(no results — ctrl+r to run)", m.paneW()) + "\n")
+					b.WriteString(m.exportOverlayLine(renderStatus("(no results — ctrl+r to run)", m.paneW())) + "\n")
 				}
 			} else {
 				b.WriteString(gridView(&m.queryTable) + "\n")
@@ -101,19 +101,25 @@ func (m Model) detailView() string {
 					if m.queryAffected == 1 {
 						unit = "row"
 					}
-					b.WriteString(renderStatus(fmt.Sprintf("%d %s affected • preview of %s • %d ms", m.queryAffected, unit, m.queryPreviewTable, m.queryMs), m.paneW()) + "\n")
+					b.WriteString(m.exportOverlayLine(renderStatus(fmt.Sprintf("%d %s affected • preview of %s • %d ms", m.queryAffected, unit, m.queryPreviewTable, m.queryMs), m.paneW())) + "\n")
 				} else {
-					b.WriteString(renderStatus(fmt.Sprintf("%d rows • %d ms", len(m.querySample.Rows), m.queryMs), m.paneW()) + "\n")
+					b.WriteString(m.exportOverlayLine(renderStatus(fmt.Sprintf("%d rows • %d ms", len(m.querySample.Rows), m.queryMs), m.paneW())) + "\n")
 				}
 			}
 		case 4:
 			b.WriteString(m.erView(m.paneInnerW(), m.paneInnerH()) + "\n")
 		default:
-			b.WriteString(dimStyle.Render(fitText(m.pagerLine(), m.paneW())) + "\n")
+			b.WriteString(m.exportOverlayLine(dimStyle.Render(fitText(m.pagerLine(), m.paneW()))) + "\n")
 			if m.sample == nil || len(m.sample.Rows) == 0 {
 				b.WriteString("(no rows)\n")
 			} else {
-				b.WriteString(gridView(&m.rowTable) + "\n")
+				// The cell editor is spliced over the cursor's own line, so
+				// the pane keeps its row count and the mouse math holds.
+				grid := gridView(&m.rowTable)
+				if m.cellEditing {
+					grid = m.spliceCellInput(grid)
+				}
+				b.WriteString(grid + "\n")
 			}
 		}
 	}
@@ -190,7 +196,17 @@ func queryResultsTop() int { return detailTableTop + queryEditorH + 4 }
 // Content width is the panel inner width (pane minus panel borders).
 func (m Model) queryEditorView() string {
 	w := m.queryEditorInnerW()
-	hl := HighlightSQL(m.editor.Text())
+	// Highlighting the whole buffer costs a lex pass over every line, but
+	// only 8 rows are drawn: cache the cells against the buffer text.
+	text := m.editor.Text()
+	if m.hlMemo == nil {
+		m.hlMemo = &hlMemo{}
+	}
+	if m.hlMemo.text != text {
+		m.hlMemo.text = text
+		m.hlMemo.cells = HighlightSQL(text)
+	}
+	hl := m.hlMemo.cells
 	lines := make([]string, 0, queryEditorH)
 	for i := 0; i < queryEditorH; i++ {
 		lineIdx := m.editor.OffY + i
