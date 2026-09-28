@@ -108,6 +108,15 @@ func (e *Editor) End()  { e.CurCol = len([]rune(e.Lines[e.CurLine])) }
 
 func (e *Editor) Text() string { return strings.Join(e.Lines, "\n") }
 
+// MoveToEnd parks the cursor after the last character.
+func (e *Editor) MoveToEnd() {
+	e.CurLine = len(e.Lines) - 1
+	if e.CurLine < 0 {
+		e.CurLine = 0
+	}
+	e.End()
+}
+
 func (e *Editor) SetText(s string) {
 	e.Lines = strings.Split(s, "\n")
 	e.CurLine, e.CurCol, e.OffY = 0, 0, 0

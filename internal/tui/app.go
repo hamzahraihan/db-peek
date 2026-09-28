@@ -22,6 +22,13 @@ func Run(connStr string, store *saved.Store) error {
 	}
 	m := New(connStr, store)
 	p := tea.NewProgram(m)
-	_, err := p.Run()
+	final, err := p.Run()
+	// One hook covers every exit path (ctrl+c, q in browse, q in the
+	// picker): whatever the final model holds is what comes back next run.
+	if fm, ok := final.(Model); ok {
+		if sess, serr := loadSessionFunc(); serr == nil {
+			fm.saveSession(sess) // synchronous: the process is exiting
+		}
+	}
 	return err
 }
