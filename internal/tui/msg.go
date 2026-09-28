@@ -7,13 +7,26 @@ import dbpkg "db-peek/internal/db"
 type (
 	detailLoadedMsg struct {
 		table   string
+		schema  string // explorer schema of the table; "" when not explorer-driven
 		cols    []dbpkg.Column
 		indexes []dbpkg.Index
 		sample  *dbpkg.Sample
 		count   int64
 		seq     int // detailSeq at request time; stale replies are dropped
 		conn    int // connSeq at request time; other-connection replies are dropped
-		err     error
+		colsErr error // set only when db.Columns failed, so a column failure
+		// collapses the tree node while an unrelated failure does not
+		err error
+	}
+	// detailCountMsg carries the exact row count for the open table. It
+	// arrives after the grid has already painted, so a slow COUNT(*) on
+	// a huge table no longer blocks the first paint.
+	detailCountMsg struct {
+		table string
+		count int64
+		seq   int
+		conn  int
+	err   error
 	}
 	rowsPageMsg struct {
 		sample *dbpkg.Sample
@@ -23,9 +36,8 @@ type (
 		err    error
 	}
 	connectMsg struct {
-		db    *dbpkg.DB
-		names []string
-		err   error
+		db  *dbpkg.DB
+		err error
 	}
 	schemasLoadedMsg struct {
 		schemas []string
@@ -33,19 +45,14 @@ type (
 		conn    int
 		err     error
 	}
-	tableCountMsg struct {
+	// countsLoadedMsg carries ApproxCount for every table in one schema,
+	// fetched concurrently (bounded at 4, mirroring loadERSchema). errs
+	// latches per table so a failure renders "?" and is never retried.
+	countsLoadedMsg struct {
 		schema string
-		table  string
-		count  int64
+		counts map[string]int64
+		errs   map[string]bool
 		conn   int
-		err    error
-	}
-	columnsLoadedMsg struct {
-		schema  string
-		table   string
-		columns []dbpkg.Column
-		conn    int
-		err     error
 	}
 	queryDoneMsg struct {
 		sql          string
@@ -74,3 +81,17 @@ type (
 		err    error
 	}
 )
+
+// historySavedMsg reports the outcome of persisting the query history.
+// A failure is a status-line note, never a query error.
+type historySavedMsg struct {
+	err error
+}
+
+// cellUpdatedMsg reports the outcome of one cell UPDATE.
+type cellUpdatedMsg struct {
+	table, col string
+	affected   int64
+	seq, conn  int
+	err        error
+}

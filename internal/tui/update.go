@@ -5,8 +5,11 @@ package tui
 // input delegate to per-screen handlers.
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -20,6 +23,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resizeBrowse()
 		m.conns.SetSize(msg.Width-4, m.contentH())
 		return m, nil
+
+	case historySavedMsg:
+		if msg.err != nil {
+			// A history write failure must never look like a query error.
+			m.status = "history not saved: " + msg.err.Error()
+		}
+		return m, nil
+
+	case cellUpdatedMsg:
+		if msg.conn != m.connSeq || msg.seq != m.detailSeq {
+			return m, nil // a different table (or connection) is open
+		}
+		m.loading = false
+		if errors.Is(msg.err, context.Canceled) {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		m.err = ""
+		m.status = fmt.Sprintf("updated %s.%s", msg.table, msg.col)
+		return m, m.loadRowsPage()
 
 	case connectMsg:
 		m.loading = false
@@ -40,6 +66,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = ""
 		m.loading = true
 		m.explorer = NewExplorer(m.db.Display, nil)
+		m.explorerGen++
 		return m, m.loadSchemas()
 
 	case detailLoadedMsg:
@@ -50,6 +77,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil // superseded by a newer selection
 		}
 		m.loading = false
+		if errors.Is(msg.err, context.Canceled) {
+			return m, nil // aborted on purpose (esc)
+		}
+		// Populate the explorer's column children for this table. This
+		// replaces the separate loadColumns round-trip: loadDetail
+		// already fetched them.
+		if msg.schema != "" {
+			for si := range m.explorer.Schemas {
+				if m.explorer.Schemas[si].Name != msg.schema {
+					continue
+				}
+				for ti := range m.explorer.Schemas[si].Tables {
+					node := &m.explorer.Schemas[si].Tables[ti]
+					if node.Name != msg.table {
+						continue
+					}
+					switch {
+					case msg.colsErr != nil:
+						// Column failure: collapse, as the old
+						// separate loadColumns round-trip did.
+						node.Expanded = false
+					case msg.cols != nil:
+						cols := make([]ColumnNode, len(msg.cols))
+						for i, c := range msg.cols {
+							cols[i] = ColumnNode{
+								Name:     c.Name,
+								DataType: c.Type,
+								IsPK:     strings.HasPrefix(c.Extra, "PK"),
+								IsFK:     strings.HasSuffix(c.Name, "_id"),
+							}
+						}
+						node.Columns = cols
+					}
+				}
+			}
+			m.explorerGen++ // the tree's column children changed
+			m.explorer.ensureVisible(m.sidebarTreeH())
+		}
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			return m, nil
@@ -57,12 +122,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.table = msg.table
 		m.cols = msg.cols
 		m.indexes = msg.indexes
+		m.colsGen++
 		m.sample = msg.sample
 		m.count = msg.count
 		m.page = 0
 		m.err = ""
 		m.buildTables()
 		m.sizeTables()
+		return m, nil
+
+	case detailCountMsg:
+		if msg.conn != m.connSeq {
+			return m, nil // superseded by a connection switch
+		}
+		if msg.seq != m.detailSeq || msg.table != m.table {
+			return m, nil // a different table (or selection) is open
+		}
+		if errors.Is(msg.err, context.Canceled) {
+			return m, nil
+		}
+		if msg.err == nil {
+			m.count = msg.count
+		}
 		return m, nil
 
 	case schemasLoadedMsg:
@@ -90,86 +171,77 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.explorer.Schemas[si].Tables = tbs
 			total += len(tbs)
 		}
+		m.explorerGen++
 		m.status = fmt.Sprintf("%d tables • %s (%s)", total, m.db.Display, m.db.Driver)
-		for _, s := range m.explorer.Schemas {
-			for _, tb := range s.Tables {
-				m2, inspectCmd := m.inspectTable(tb.Name)
-				m = m2
-				return m, tea.Batch(m.loadOneCount(s.Name, tb.Name), inspectCmd)
+		// One bounded-concurrency count batch per schema, issued in the
+		// same operation as the first table's detail load so both share
+		// one cancellable context.
+		ctx := m.newOpContext(15 * time.Second)
+		cmds := make([]tea.Cmd, 0, len(m.explorer.Schemas)+1)
+		for si := range m.explorer.Schemas {
+			s := m.explorer.Schemas[si]
+			names := make([]string, len(s.Tables))
+			for ti, tb := range s.Tables {
+				names[ti] = tb.Name
+			}
+			cmds = append(cmds, m.loadCounts(ctx, s.Name, names))
+		}
+		// A restored session wins over "open the first table": the user
+		// left db-peek on that table, tab and filter last time.
+		if m.restoreFilter != "" {
+			m.explorer.SetFilter(m.restoreFilter)
+		}
+		restoreTable, restoreTab := m.restoreTable, m.restoreTab
+		m.restoreTable, m.restoreFilter, m.restoreTab = "", "", 0
+		if restoreTable != "" {
+			for _, s := range m.explorer.Schemas {
+				for _, tb := range s.Tables {
+					if tb.Name != restoreTable {
+						continue
+					}
+					m2, inspectCmd := m.inspectTableCtx(ctx, s.Name, tb.Name)
+					m = m2
+					if restoreTab >= 0 && restoreTab <= 4 {
+						m.tab = restoreTab
+					}
+					return m, tea.Batch(append(cmds, inspectCmd)...)
+				}
 			}
 		}
-		return m, nil
+		for _, s := range m.explorer.Schemas {
+			for _, tb := range s.Tables {
+				m2, inspectCmd := m.inspectTableCtx(ctx, s.Name, tb.Name)
+				m = m2
+				return m, tea.Batch(append(cmds, inspectCmd)...)
+			}
+		}
+		return m, tea.Batch(cmds...)
 
-	case tableCountMsg:
+	case countsLoadedMsg:
 		if msg.conn != m.connSeq {
 			return m, nil // superseded by a connection switch
+		}
+		if m.counts == nil {
+			m.counts = map[string]int64{}
 		}
 		for si := range m.explorer.Schemas {
 			if m.explorer.Schemas[si].Name != msg.schema {
 				continue
 			}
 			for ti := range m.explorer.Schemas[si].Tables {
-				if m.explorer.Schemas[si].Tables[ti].Name != msg.table {
+				name := m.explorer.Schemas[si].Tables[ti].Name
+				if msg.errs[name] {
+					m.explorer.Schemas[si].Tables[ti].CountErr = true
 					continue
 				}
-				if msg.err != nil {
-					m.explorer.Schemas[si].Tables[ti].CountErr = true
-				} else {
-					m.explorer.Schemas[si].Tables[ti].Count = msg.count
+				if n, ok := msg.counts[name]; ok {
+					m.explorer.Schemas[si].Tables[ti].Count = n
 					m.explorer.Schemas[si].Tables[ti].CountOK = true
 					m.explorer.Schemas[si].Tables[ti].CountErr = false
+					m.counts[name] = n
 				}
 			}
 		}
-		for _, s := range m.explorer.Schemas {
-			for _, tb := range s.Tables {
-				if !tb.CountOK && !tb.CountErr {
-					return m, m.loadOneCount(s.Name, tb.Name)
-				}
-			}
-		}
-		return m, nil
-
-	case columnsLoadedMsg:
-		if msg.conn != m.connSeq {
-			return m, nil // superseded by a connection switch
-		}
-		if msg.err != nil {
-			m.err = msg.err.Error()
-			for si := range m.explorer.Schemas {
-				if m.explorer.Schemas[si].Name != msg.schema {
-					continue
-				}
-				for ti := range m.explorer.Schemas[si].Tables {
-					if m.explorer.Schemas[si].Tables[ti].Name == msg.table {
-						m.explorer.Schemas[si].Tables[ti].Expanded = false
-					}
-				}
-			}
-			m.explorer.ensureVisible(m.sidebarTreeH())
-			return m, nil
-		}
-		for si := range m.explorer.Schemas {
-			if m.explorer.Schemas[si].Name != msg.schema {
-				continue
-			}
-			for ti := range m.explorer.Schemas[si].Tables {
-				if m.explorer.Schemas[si].Tables[ti].Name != msg.table {
-					continue
-				}
-				cols := make([]ColumnNode, len(msg.columns))
-				for i, c := range msg.columns {
-					cols[i] = ColumnNode{
-						Name:     c.Name,
-						DataType: c.Type,
-						IsPK:     strings.HasPrefix(c.Extra, "PK"),
-						IsFK:     strings.HasSuffix(c.Name, "_id"),
-					}
-				}
-				m.explorer.Schemas[si].Tables[ti].Columns = cols
-			}
-		}
-		m.explorer.ensureVisible(m.sidebarTreeH())
 		return m, nil
 
 	case rowsPageMsg:
@@ -180,6 +252,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil // superseded by a newer selection
 		}
 		m.loading = false
+		if errors.Is(msg.err, context.Canceled) {
+			return m, nil // aborted on purpose (esc)
+		}
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			return m, nil
@@ -220,13 +295,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.loading = false
+		if errors.Is(msg.err, context.Canceled) {
+			return m, nil // aborted on purpose (esc): not a query error
+		}
+		// Record the attempt either way: a query that failed is exactly
+		// the one the user wants to recall and fix.
+		saveCmd := m.recordHistory(msg.sql)
 		if msg.err != nil {
 			errStr := msg.err.Error() + dbpkg.HintForError(m.connStr, msg.err)
 			m.qbufs[bufIdx].errStr = errStr
 			if bufIdx == m.qcur {
 				m.err = errStr
 			}
-			return m, nil // keep editor text + old results
+			return m, saveCmd // keep editor text + old results
 		}
 		applyBuf := &m.qbufs[bufIdx]
 		applyBuf.sample = msg.sample
@@ -253,7 +334,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.sizeTables()
 				}
 				m.loading = true
-				return m, m.loadSchemas()
+				return m, tea.Batch(m.loadSchemas(), saveCmd)
 			}
 			if msg.previewTable != "" && msg.sample != nil {
 				applyBuf.sample = msg.sample
@@ -283,15 +364,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.queryTable.SetHeaderStyles(dataFieldHeaderStyle, dimFieldHeaderStyle)
 					m.sizeTables()
 				}
-				// Best-effort count refresh for the previewed table.
+				// Best-effort count refresh for the previewed table: the
+				// cached value is stale after a write, so re-fetch just it.
 				for _, s := range m.explorer.Schemas {
 					for _, tb := range s.Tables {
 						if tb.Name == msg.previewTable {
-							return m, m.loadOneCount(s.Name, tb.Name)
+							ctx := m.newOpContext(10 * time.Second)
+							return m, tea.Batch(m.loadCounts(ctx, s.Name, []string{tb.Name}), saveCmd)
 						}
 					}
 				}
-				return m, nil
+				return m, saveCmd
 			}
 			// Write path without preview: no grid, the view shows rows-affected instead.
 			applyBuf.sample = nil
@@ -308,7 +391,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.queryTable.setData([]string{"rows"}, [][]string{{"(no rows)"}})
 				m.sizeTables()
 			}
-			return m, nil
+			return m, saveCmd
 		}
 		var qcols []string
 		var qrows [][]string
@@ -334,7 +417,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.queryTable.SetHeaderStyles(dataFieldHeaderStyle, dimFieldHeaderStyle)
 			m.sizeTables()
 		}
-		return m, nil
+		return m, saveCmd
 
 	case erLoadedMsg:
 		if msg.conn != m.connSeq {
@@ -342,6 +425,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.seq != m.erSeq {
 			return m, nil // superseded by a newer tab enter
+		}
+		if errors.Is(msg.err, context.Canceled) {
+			return m, nil // aborted on purpose (esc)
 		}
 		if msg.err != nil {
 			m.err = msg.err.Error()
@@ -365,6 +451,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.seq != m.erSeq {
 			return m, nil // superseded
 		}
+		if errors.Is(msg.err, context.Canceled) {
+			return m, nil // aborted on purpose (esc)
+		}
 		if msg.err != nil {
 			if len(msg.tables) == 0 && len(msg.links) == 0 {
 				// Total failure: stay on the legacy single-table
@@ -376,7 +465,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Partial failure (design §5): keep the usable boxes
 			// + links with loaded:true and record the error in
 			// erSchema.err, surfaced via the m.err footer line.
-			m.erSchema = erSchemaState{tables: msg.tables, links: msg.links, loaded: true, err: msg.err.Error()}
+			m.setERSchema(erSchemaState{tables: msg.tables, links: msg.links, loaded: true, err: msg.err.Error()})
 			if m.erCenter == "" {
 				m.erCenter = m.table
 			}
@@ -388,7 +477,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err.Error()
 			return m, nil
 		}
-		m.erSchema = erSchemaState{tables: msg.tables, links: msg.links, loaded: true}
+		m.setERSchema(erSchemaState{tables: msg.tables, links: msg.links, loaded: true})
 		if m.erCenter == "" {
 			m.erCenter = m.table
 		}
@@ -449,10 +538,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	if key == "ctrl+c" {
+		m.cancelOp()
 		if m.db != nil {
 			_ = m.db.Close()
 		}
 		return m, tea.Quit
+	}
+	// esc aborts an in-flight command. While loading, the pane renders only
+	// "loading...", so esc's other meanings (clear selection, step focus,
+	// back to sidebar) are all no-ops here.
+	if key == "esc" && m.loading {
+		m.cancelOp()
+		m.status = "cancelled"
+		return m, nil
 	}
 
 	// Which-key overlay is modal: while open every key except ?/esc
@@ -530,11 +628,16 @@ func (m Model) helpToggleAllowed() bool {
 // in-flight replies carrying the old detail/er/query seq are dropped
 // even before their conn generation is checked.
 func (m *Model) clearConnState() {
+	m.cancelOp()
 	m.table = ""
 	m.cols = nil
+	m.colsGen++
+	m.explorerGen++
+	m.ccMemo = &completionMemo{}
 	m.indexes = nil
 	m.sample = nil
 	m.count = -1
+	m.counts = nil
 	m.page = 0
 	m.detailSeq++
 	m.querySeq++
@@ -552,7 +655,9 @@ func (m *Model) clearConnState() {
 	m.loadActiveBuf(0)
 	m.erSeq++
 	m.explorer = NewExplorer("", nil)
-	m.erSchema = erSchemaState{}
+	m.setERSchema(erSchemaState{})
+	m.erMemo = &erMemo{} // positions belong to the old connection
+	m.hlMemo = &hlMemo{}
 	m.erCache = nil
 	m.erLinks = nil
 	m.erOffset = 0
@@ -625,18 +730,12 @@ func (m Model) sidebarKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd)
 					}
 				}
 			}
-			colCmd := m.loadColumns(row.Schema, row.Table)
-			m2, inspectCmd := m.inspectTable(row.Table)
-			m = m2
-			return m, tea.Batch(colCmd, inspectCmd)
+			return m.inspectTable(row.Schema, row.Table)
 		}
 		if row.Kind != RowTable {
 			return m, nil
 		}
-		colCmd := m.loadColumns(row.Schema, row.Table)
-		m2, inspectCmd := m.inspectTable(row.Table)
-		m = m2
-		return m, tea.Batch(colCmd, inspectCmd)
+		return m.inspectTable(row.Schema, row.Table)
 	case "/":
 		// Open the filter input, keeping any existing text for refinement.
 		m.filtering = true
@@ -690,6 +789,35 @@ func (m Model) filterKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) 
 // Tabs 3 (query) and 4 (er) route to their own handlers first so editing
 // runes never trigger the schema/indexes/rows bindings below.
 func (m Model) detailKey(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
+	// The inline cell editor is modal: every key belongs to it until
+	// enter commits or esc abandons the edit.
+	if m.cellEditing {
+		switch key {
+		case "esc":
+			m.stopCellEdit()
+			return m, nil
+		case "enter":
+			return m, m.submitCellEdit()
+		}
+		var cmd tea.Cmd
+		m.cellInput, cmd = m.cellInput.Update(msg)
+		return m, cmd
+	}
+	// The export prompt is modal inside the detail pane: every key
+	// belongs to the path input until enter or esc.
+	if m.exporting {
+		switch key {
+		case "esc":
+			m.stopExport()
+			return m, nil
+		case "enter":
+			m.finishExport()
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.exportInput, cmd = m.exportInput.Update(msg)
+		return m, cmd
+	}
 	if m.tab == 3 {
 		return m.queryKeys(msg, key)
 	}
@@ -725,7 +853,7 @@ func (m Model) detailKey(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case "r":
 		m.loading = true
-		return m, m.loadDetail(m.table)
+		return m, m.loadDetail(m.explorer.schemaOf(m.table), m.table)
 	case "n":
 		if m.tab == 2 && m.hasNextPage() {
 			m.page++
@@ -746,6 +874,21 @@ func (m Model) detailKey(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 			m.page = 0
 			m.loading = true
 			return m, m.loadRowsPage()
+		}
+		return m, nil
+	case "E":
+		m.startExport()
+		return m, nil
+	case ",":
+		m.rowTable.MoveColLeft()
+		return m, nil
+	case ".":
+		m.rowTable.MoveColRight()
+		return m, nil
+	case "e":
+		// Only the rows tab has editable cells; elsewhere `e` is free.
+		if m.tab == 2 && m.startCellEdit() {
+			return m, nil
 		}
 		return m, nil
 	}
@@ -779,6 +922,26 @@ func (m Model) detailKey(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 // sidebar. With results focused the grid moves and 1-5/r switch/rerun.
 func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 	if m.queryFocus == 0 {
+		// ctrl+p/ctrl+n walk the query history; ctrl+e/ctrl+y explain
+		// the buffer on the next run without rewriting it.
+		switch key {
+		case "ctrl+p":
+			m.historyPrev()
+			return m, nil
+		case "ctrl+n":
+			m.historyNext()
+			return m, nil
+		case "ctrl+e":
+			m.pendingExplain, m.pendingAnalyze = true, false
+			m.startQueryRun()
+			cmd := m.runQuery()
+			return m, cmd
+		case "ctrl+y":
+			m.pendingExplain, m.pendingAnalyze = true, true
+			m.startQueryRun()
+			cmd := m.runQuery()
+			return m, cmd
+		}
 		// Autocomplete popup takes priority: Tab/Enter accept, Esc
 		// dismisses (a second Esc then drops to results), Up/Down move
 		// the selection instead of the editor cursor.
@@ -853,7 +1016,8 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 				m.completeItems = nil
 				m.completeIdx = 0
 				m.startQueryRun()
-				return m, m.runQuery()
+				cmd := m.runQuery()
+				return m, cmd
 			case "ctrl+t":
 				m.showComplete = false
 				m.completeItems = nil
@@ -893,7 +1057,7 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 			m.editor.Insert(' ')
 			m.editor.Insert(' ')
 			m.clampEditorScroll()
-			m.refreshCompletion()
+			m.refreshCompletionAfterEdit()
 			return m, nil
 		case "shift+up":
 			m.editor.ExtendSelectionTo(m.editor.CurLine - 1)
@@ -923,16 +1087,17 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 				m.editor.DeleteCurrentLine()
 			}
 			m.clampEditorScroll()
-			m.refreshCompletion()
+			m.refreshCompletionAfterEdit()
 			return m, nil
 		case "ctrl+/", "ctrl+_":
 			m.editor.ToggleCommentRange()
 			m.clampEditorScroll()
-			m.refreshCompletion()
+			m.refreshCompletionAfterEdit()
 			return m, nil
 		case "ctrl+r", "f5":
 			m.startQueryRun()
-			return m, m.runQuery()
+			cmd := m.runQuery()
+			return m, cmd
 		case "ctrl+t":
 			m.saveActiveBuf()
 			m.newQueryBuf()
@@ -946,18 +1111,18 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 			m.editor.ClearSelection()
 			m.editor.Newline()
 			m.clampEditorScroll()
-			m.refreshCompletion()
+			m.refreshCompletionAfterEdit()
 			return m, nil
 		case "backspace":
 			m.editor.ClearSelection()
 			m.editor.Backspace()
 			m.clampEditorScroll()
-			m.refreshCompletion()
+			m.refreshCompletionAfterEdit()
 			return m, nil
 		case "delete":
 			m.editor.ClearSelection()
 			m.editor.Delete()
-			m.refreshCompletion()
+			m.refreshCompletionAfterEdit()
 			return m, nil
 		case "up":
 			m.editor.ClearSelection()
@@ -1005,7 +1170,7 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 				m.editor.Insert(r)
 			}
 			m.clampEditorScroll()
-			m.refreshCompletion()
+			m.refreshCompletionAfterEdit()
 			return m, nil
 		}
 		return m, nil
@@ -1039,7 +1204,8 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case "ctrl+r", "f5", "r":
 		m.startQueryRun()
-		return m, m.runQuery()
+		cmd := m.runQuery()
+		return m, cmd
 	case "ctrl+t", "t":
 		m.saveActiveBuf()
 		m.newQueryBuf()
@@ -1063,6 +1229,9 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 	case "e":
 		m.queryFocus = 0
 		m.clampEditorScroll()
+		return m, nil
+	case "E":
+		m.startExport()
 		return m, nil
 	}
 	g := &m.queryTable
@@ -1169,7 +1338,7 @@ func (m Model) erKeys(_ tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "r":
-		m.erSchema.loaded = false
+		m.setERSchema(erSchemaState{tables: m.erSchema.tables, links: m.erSchema.links})
 		m.erSeq++
 		var names []string
 		for _, t := range m.erSchema.tables {
@@ -1178,7 +1347,12 @@ func (m Model) erKeys(_ tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 		if len(names) == 0 && m.table != "" {
 			names = []string{m.table}
 		}
-		return m, m.loadERSchema("", names)
+		// Same shared-context rule as setTab: one operation, one cancel.
+		ctx := m.newOpContext(15 * time.Second)
+		if m.table != "" {
+			return m, tea.Batch(m.loadERCtx(ctx, m.table), m.loadERSchemaCtx(ctx, "", names))
+		}
+		return m, m.loadERSchemaCtx(ctx, "", names)
 	}
 	if key == "tab" {
 		return m, nil
@@ -1251,7 +1425,9 @@ func (m Model) recenterER(name string) (Model, tea.Cmd) {
 	m.loading = true
 	m.page = 0
 	m.detailSeq++
-	return m, m.loadDetail(name)
+	// No explorer schema: the ER diagram owns the selection here, so the
+	// tree node's columns are left alone.
+	return m, m.loadDetail("", name)
 }
 
 // inspectTable previews one table in the detail pane; shared by sidebar
@@ -1259,7 +1435,7 @@ func (m Model) recenterER(name string) (Model, tea.Cmd) {
 // Previewing blurs the filter input (the text stays applied) but never
 // steals pane focus: sidebar previews stay in the sidebar (Tab jumps to
 // detail), detail-initiated previews keep detail focus.
-func (m Model) inspectTable(name string) (Model, tea.Cmd) {
+func (m Model) inspectTable(schema, name string) (Model, tea.Cmd) {
 	m.filtering = false
 	m.filterInput.Blur()
 	m.table = name
@@ -1269,5 +1445,20 @@ func (m Model) inspectTable(name string) (Model, tea.Cmd) {
 	m.page = 0 // pageSize persists across tables
 	m.hoverTab = -1
 	m.detailSeq++
-	return m, m.loadDetail(name)
+	return m, m.loadDetail(schema, name)
+}
+
+// inspectTableCtx is inspectTable under a caller-owned context, so a
+// batched operation can issue it alongside sibling commands.
+func (m Model) inspectTableCtx(ctx context.Context, schema, name string) (Model, tea.Cmd) {
+	m.filtering = false
+	m.filterInput.Blur()
+	m.table = name
+	m.tab = 0
+	m.loading = true
+	m.err = ""
+	m.page = 0
+	m.hoverTab = -1
+	m.detailSeq++
+	return m, m.loadDetailCtx(ctx, schema, name)
 }
