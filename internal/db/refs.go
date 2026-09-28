@@ -130,6 +130,9 @@ func (d *DB) AllForeignKeys(ctx context.Context, tables []string) ([]ForeignKey,
 	if len(tables) == 0 {
 		return nil, nil
 	}
+	if d.Driver == SQLite {
+		return d.sqliteAllForeignKeys(ctx, tables)
+	}
 	seen := map[string]bool{}
 	var out []ForeignKey
 	for _, t := range tables {
@@ -144,6 +147,56 @@ func (d *DB) AllForeignKeys(ctx context.Context, tables []string) ([]ForeignKey,
 			}
 			seen[k] = true
 			out = append(out, fk)
+		}
+	}
+	return out, nil
+}
+
+// sqliteAllForeignKeys returns every FK in the database with a single
+// ListTables and one PRAGMA foreign_key_list per table, instead of the
+// N×N PRAGMA scan the per-table ForeignKeys path performs. Order is
+// first-seen table order, matching AllForeignKeys' documented contract.
+func (d *DB) sqliteAllForeignKeys(ctx context.Context, tables []string) ([]ForeignKey, error) {
+	want := make(map[string]bool, len(tables))
+	for _, t := range tables {
+		want[t] = true
+	}
+	names, err := d.ListTables(ctx)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var out []ForeignKey
+	for _, n := range names {
+		if !want[n] {
+			continue // only tables the caller asked about
+		}
+		q := fmt.Sprintf(`PRAGMA foreign_key_list(%s)`, d.Driver.QuoteIdent(n))
+		r, err := d.SQL.QueryContext(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+		var loopErr error
+		func() {
+			defer r.Close()
+			for r.Next() {
+				var id, seq int
+				var to, from, toCol, onUpd, onDel, match string
+				if err := r.Scan(&id, &seq, &to, &from, &toCol, &onUpd, &onDel, &match); err != nil {
+					loopErr = err
+					return
+				}
+				k := n + "|" + from + "|" + to + "|" + toCol
+				if seen[k] {
+					continue
+				}
+				seen[k] = true
+				out = append(out, ForeignKey{FromTable: n, FromColumn: from, ToTable: to, ToColumn: toCol})
+			}
+			loopErr = r.Err()
+		}()
+		if loopErr != nil {
+			return nil, loopErr
 		}
 	}
 	return out, nil

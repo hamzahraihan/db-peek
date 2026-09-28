@@ -3,6 +3,8 @@ package db
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -76,5 +78,36 @@ func TestAllForeignKeysDedupe(t *testing.T) {
 	}
 	if out2, _ := d.AllForeignKeys(context.Background(), nil); len(out2) != 0 {
 		t.Fatalf("want empty for nil tables, got %v", out2)
+	}
+}
+
+// A wide schema must cost one PRAGMA per table, not one per (table ×
+// table): the old scan issued a full-database scan for every table.
+func TestAllForeignKeysSQLiteScalesLinearly(t *testing.T) {
+	d, pragmas := openCountedDB(t)
+	const n = 12
+	var b strings.Builder
+	b.WriteString("PRAGMA foreign_keys=ON;\nCREATE TABLE parent(id INTEGER PRIMARY KEY);\n")
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&b, "CREATE TABLE child%02d(id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parent(id));\n", i)
+	}
+	if _, err := d.SQL.Exec(b.String()); err != nil {
+		t.Fatal(err)
+	}
+	tables := []string{"parent"}
+	for i := 0; i < n; i++ {
+		tables = append(tables, fmt.Sprintf("child%02d", i))
+	}
+	pragmas.Store(0)
+	out, err := d.AllForeignKeys(context.Background(), tables)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != n {
+		t.Fatalf("want %d foreign keys, got %d: %v", n, len(out), out)
+	}
+	// One PRAGMA per table; the old path issued one per (table × table).
+	if got := pragmas.Load(); got != int64(len(tables)) {
+		t.Fatalf("want %d PRAGMA statements (one per table), got %d", len(tables), got)
 	}
 }
