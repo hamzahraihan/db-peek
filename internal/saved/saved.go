@@ -23,14 +23,56 @@ type Profile struct {
 type Store struct {
 	Path     string
 	profiles []Profile
+	pathErr  error // why Path is empty, when the config dir was unavailable
 }
 
-func DefaultPath() (string, error) {
+// DefaultDir is the directory db-peek keeps all of its state in.
+func DefaultDir() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "db-peek", "connections.json"), nil
+	return filepath.Join(dir, "db-peek"), nil
+}
+
+func DefaultPath() (string, error) {
+	dir, err := DefaultDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "connections.json"), nil
+}
+
+// New returns a store bound to the default path. If the config dir is
+// unavailable the store keeps an empty Path and persists fail with an
+// actionable message instead of "open : no such file or directory".
+func New() *Store {
+	p, err := DefaultPath()
+	if err != nil {
+		return &Store{pathErr: err}
+	}
+	return &Store{Path: p}
+}
+
+// writeAtomic writes data to path via a same-directory temp file and
+// os.Rename, so a crash mid-write can never truncate the real file.
+// os.Rename replaces an existing destination on Windows (MoveFileEx
+// with MOVEFILE_REPLACE_EXISTING), POSIX, and every other platform Go
+// supports — no remove-then-rename is needed.
+func writeAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, perm); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 func Load() (*Store, error) {
@@ -82,45 +124,55 @@ func (s *Store) Upsert(name, conn string) error {
 		return fmt.Errorf("connection string is empty")
 	}
 	now := time.Now().UTC()
-	done := false
-	for i, p := range s.profiles {
-		if strings.EqualFold(p.Name, name) {
-			s.profiles[i] = Profile{Name: p.Name, Conn: conn, UpdatedAt: now}
-			done = true
+	next := make([]Profile, 0, len(s.profiles)+1)
+	replaced := false
+	for _, p := range s.profiles {
+		if !replaced && strings.EqualFold(p.Name, name) {
+			next = append(next, Profile{Name: p.Name, Conn: conn, UpdatedAt: now})
+			replaced = true
+			continue
 		}
+		next = append(next, p)
 	}
-	if !done {
-		s.profiles = append(s.profiles, Profile{Name: name, Conn: conn, UpdatedAt: now})
+	if !replaced {
+		next = append(next, Profile{Name: name, Conn: conn, UpdatedAt: now})
 	}
-	return s.persist()
+	return s.persist(next)
 }
 
 func (s *Store) Delete(name string) error {
-	kept := s.profiles[:0]
+	next := make([]Profile, 0, len(s.profiles))
 	found := false
-	for _, p := range s.profiles {
+	for i, p := range s.profiles {
 		if strings.EqualFold(p.Name, name) {
+			next = append(next, s.profiles[i+1:]...)
 			found = true
-			continue
+			break
 		}
-		kept = append(kept, p)
+		next = append(next, p)
 	}
 	if !found {
 		return fmt.Errorf("no saved connection %q", name)
 	}
-	s.profiles = kept
-	return s.persist()
+	return s.persist(next)
 }
 
-func (s *Store) persist() error {
-	if err := os.MkdirAll(filepath.Dir(s.Path), 0o700); err != nil {
-		return err
+// persist writes next and, only on success, adopts it as the store's
+// profiles. On failure s.profiles is untouched, so the UI list and the
+// disk file can never diverge.
+func (s *Store) persist(next []Profile) error {
+	if s.Path == "" {
+		return fmt.Errorf("saved connections have no path (config dir unavailable): %w", s.pathErr)
 	}
-	data, err := json.MarshalIndent(s.profiles, "", "  ")
+	data, err := json.MarshalIndent(next, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.Path, append(data, '\n'), 0o600)
+	if err := writeAtomic(s.Path, append(data, '\n'), 0o600); err != nil {
+		return err
+	}
+	s.profiles = next
+	return nil
 }
 
 // Mask renders a conn string for display with any password removed.
