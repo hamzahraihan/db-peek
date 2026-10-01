@@ -30,8 +30,9 @@ import (
 
 // appVersion identifies the build; bump on user-visible changes so stale
 // binaries (e.g. a project-local db-peek.exe shadowing the install) are
-// diagnosable via --version.
-const appVersion = "0.6.0"
+// diagnosable via --version. Overridden at release time via
+// -ldflags "-X main.appVersion={{.Version}}"; default is dev fallback.
+var appVersion = "0.6.0"
 
 func main() {
 	var (
