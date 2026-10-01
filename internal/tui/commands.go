@@ -237,6 +237,28 @@ func (m *Model) runQuery() tea.Cmd {
 		if tbl == "" {
 			return queryDoneMsg{sql: sql, affected: n, ms: ms, seq: seq, conn: conn, qbufID: qid}
 		}
+		// Never-silent rule: on pg a bare write target matching 2+ schemas
+		// must error, never preview a first-match schema. Same
+		// candidates-gate as recenterER, surfaced on the existing
+		// query-done error path with zero preview roundtrip. An explicit
+		// schema.table skips the gate (previewQual resolves it directly).
+		bare, qualified := tbl, false
+		if q, err := dbpkg.ParseQualTable(tbl); err == nil {
+			if q.Schema != "" {
+				qualified = true
+			} else {
+				bare = q.Name
+			}
+		}
+		if !qualified && db.Driver == dbpkg.Postgres && m.explorer.schemaOf(bare) == "" {
+			if cands := m.explorer.candidates(bare); len(cands) > 1 {
+				amb := make([]dbpkg.QualTable, len(cands))
+				for i, s := range cands {
+					amb[i] = dbpkg.QualTable{Schema: s, Name: bare}
+				}
+				return queryDoneMsg{sql: sql, affected: n, ms: time.Since(start).Milliseconds(), seq: seq, conn: conn, qbufID: qid, err: dbpkg.AmbiguousErr(bare, amb)}
+			}
+		}
 		preview, perr := db.PageRows(ctx, previewQual(m, tbl), 20, 0)
 		if perr != nil {
 			// Swallowed by design: affected-count is the source of truth.
@@ -252,7 +274,7 @@ func (m *Model) loadER(table string) tea.Cmd {
 
 // previewQual scopes a write-preview target to its schema: an explicit
 // schema.table wins, otherwise the explorer resolves a bare
-// single-match (ambiguous pg stays bare — the engine reports it).
+// single-match (ambiguous pg stays bare — runQuery gates it first).
 func previewQual(m *Model, tbl string) dbpkg.QualTable {
 	if q, err := dbpkg.ParseQualTable(tbl); err == nil {
 		if q.Schema != "" {

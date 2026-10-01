@@ -1348,6 +1348,20 @@ func (m Model) erKeys(_ tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 		if len(quals) == 0 && m.table != "" {
 			quals = []dbpkg.QualTable{{Schema: m.explorer.schemaOf(m.table), Name: m.table}}
 		}
+		// Never-silent rule: on pg an ambiguous center surfaces the
+		// resolver-style error with zero DB calls instead of reloading a
+		// possibly-wrong schema. Same candidates-gate as recenterER.
+		if m.table != "" && m.db != nil && m.db.Driver == dbpkg.Postgres && m.explorer.schemaOf(m.table) == "" {
+			if cands := m.explorer.candidates(m.table); len(cands) > 1 {
+				amb := make([]dbpkg.QualTable, len(cands))
+				for i, s := range cands {
+					amb[i] = dbpkg.QualTable{Schema: s, Name: m.table}
+				}
+				m.loading = false
+				m.err = dbpkg.AmbiguousErr(m.table, amb).Error()
+				return m, nil
+			}
+		}
 		// Same shared-context rule as setTab: one operation, one cancel.
 		ctx := m.newOpContext(15 * time.Second)
 		if m.table != "" {
