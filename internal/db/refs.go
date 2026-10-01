@@ -20,8 +20,8 @@ SELECT c.relname, a.attname, c2.relname, a2.attname
 FROM pg_constraint o
 JOIN pg_class c ON c.oid = o.conrelid
 JOIN pg_class c2 ON c2.oid = o.confrelid
-JOIN pg_namespace nc ON nc.oid = c.oid
-JOIN pg_namespace nc2 ON nc2.oid = c2.oid
+JOIN pg_namespace nc ON nc.oid = c.relnamespace
+JOIN pg_namespace nc2 ON nc2.oid = c2.relnamespace
 JOIN LATERAL unnest(o.conkey, o.confkey) WITH ORDINALITY AS k(attnum, confnum, ord) ON true
 JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.attnum
 JOIN pg_attribute a2 ON a2.attrelid = c2.oid AND a2.attnum = k.confnum
