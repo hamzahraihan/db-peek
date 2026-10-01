@@ -68,3 +68,24 @@ func TestQualSchemaIgnoredSQLite(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAmbiguousErrFormat(t *testing.T) {
+	err := AmbiguousErr("users", []QualTable{{Schema: "analytics", Name: "users"}, {Schema: "public", Name: "users"}})
+	want := `table "users" is ambiguous: public.users, analytics.users — qualify as schema.table`
+	if err.Error() != want {
+		t.Fatalf("got %q want %q", err.Error(), want)
+	}
+}
+
+func TestResolveTableSQLitePassthrough(t *testing.T) {
+	d := openMem(t)
+	defer d.SQL.Close()
+	ctx := context.Background()
+	q, err := d.ResolveTable(ctx, "users")
+	if err != nil || q.Name != "users" {
+		t.Fatalf("got %+v, %v", q, err)
+	}
+	if _, err := d.ResolveTable(ctx, "no_such_table_xyz"); err == nil {
+		t.Fatal("expected not-found error")
+	}
+}

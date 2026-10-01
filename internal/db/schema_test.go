@@ -45,7 +45,7 @@ func TestListTablesInSchemaSQLite(t *testing.T) {
 func TestApproxCountSQLite(t *testing.T) {
 	d := openMem(t)
 	defer d.SQL.Close()
-	n, err := d.ApproxCount(context.Background(), "main", "users")
+	n, err := d.ApproxCount(context.Background(), QualTable{Schema: "main", Name: "users"})
 	if err != nil {
 		t.Fatal(err)
 	}
