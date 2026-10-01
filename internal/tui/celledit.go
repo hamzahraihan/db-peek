@@ -154,7 +154,7 @@ func (m *Model) submitCellEdit() tea.Cmd {
 			}
 			pkVals[i] = keyParam(raw[idx])
 		}
-		affected, err := m.db.UpdateCell(ctx, table, pk, pkVals, column, val)
+		affected, err := m.db.UpdateCell(ctx, dbpkg.QualTable{Schema: m.explorer.schemaOf(table), Name: table}, pk, pkVals, column, val)
 		return cellUpdatedMsg{table: table, col: column, affected: affected, seq: seq, conn: conn, err: err}
 	}
 }

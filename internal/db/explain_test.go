@@ -99,7 +99,7 @@ func TestUpdateCellSQLite(t *testing.T) {
 	if _, err := d.SQL.Exec(`INSERT INTO users(id, name) VALUES (1,'a'), (2,'b')`); err != nil {
 		t.Fatal(err)
 	}
-	n, err := d.UpdateCell(context.Background(), "users", []string{"id"}, []any{int64(2)}, "name", "edited")
+	n, err := d.UpdateCell(context.Background(), QualTable{Name: "users"}, []string{"id"}, []any{int64(2)}, "name", "edited")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestUpdateCellBindsTypedKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A typed key addresses exactly its own row.
-	n, err := d.UpdateCell(context.Background(), "users", []string{"id"}, []any{int64(2)}, "name", "typed")
+	n, err := d.UpdateCell(context.Background(), QualTable{Name: "users"}, []string{"id"}, []any{int64(2)}, "name", "typed")
 	if err != nil {
 	t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestUpdateCellBindsTypedKey(t *testing.T) {
 	// A textified key cannot be relied on: it must never be what the
 	// caller sends, so assert the difference is observable rather than
 	// silently "working" on engines that coerce.
-	textN, err := d.UpdateCell(context.Background(), "users", []string{"id"}, []any{"3"}, "name", "ghost")
+	textN, err := d.UpdateCell(context.Background(), QualTable{Name: "users"}, []string{"id"}, []any{"3"}, "name", "ghost")
 	if err == nil && textN != 0 {
 		t.Fatalf("a text key for a missing row must affect 0 rows, got %d", textN)
 	}
@@ -162,7 +162,7 @@ func TestUpdateCellWritesNull(t *testing.T) {
 	if _, err := d.SQL.Exec(`INSERT INTO users(id, name) VALUES (1, 'a')`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.UpdateCell(context.Background(), "users", []string{"id"}, []any{int64(1)}, "name", nil); err != nil {
+	if _, err := d.UpdateCell(context.Background(), QualTable{Name: "users"}, []string{"id"}, []any{int64(1)}, "name", nil); err != nil {
 		t.Fatal(err)
 	}
 	var name sql.NullString
@@ -177,7 +177,7 @@ func TestUpdateCellWritesNull(t *testing.T) {
 // A mismatched key/value count is caught before any statement runs.
 func TestUpdateCellRejectsBadKey(t *testing.T) {
 	d := openCellDB(t)
-	_, err := d.UpdateCell(context.Background(), "users", []string{"id"}, []any{int64(1), int64(2)}, "name", "x")
+	_, err := d.UpdateCell(context.Background(), QualTable{Name: "users"}, []string{"id"}, []any{int64(1), int64(2)}, "name", "x")
 	if err == nil {
 		t.Fatal("a key/value count mismatch must be rejected")
 	}

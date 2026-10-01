@@ -69,6 +69,28 @@ func TestQualSchemaIgnoredSQLite(t *testing.T) {
 	}
 }
 
+func TestUpdateCellQualSchemaSQLite(t *testing.T) {
+	d := openCellDB(t)
+	ctx := context.Background()
+	if _, err := d.SQL.Exec(`INSERT INTO users(id, name) VALUES (1,'a'), (2,'b')`); err != nil {
+		t.Fatal(err)
+	}
+	n, err := d.UpdateCell(ctx, QualTable{Schema: "main", Name: "users"}, []string{"id"}, []any{int64(2)}, "name", "edited")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("want exactly 1 row affected, got %d", n)
+	}
+	var got string
+	if err := d.SQL.QueryRow(`SELECT name FROM users WHERE id = 2`).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != "edited" {
+		t.Fatalf("want the edited row, got %q", got)
+	}
+}
+
 func TestAmbiguousErrFormat(t *testing.T) {
 	err := AmbiguousErr("users", []QualTable{{Schema: "analytics", Name: "users"}, {Schema: "public", Name: "users"}})
 	want := `table "users" is ambiguous: public.users, analytics.users — qualify as schema.table`
