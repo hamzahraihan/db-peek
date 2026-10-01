@@ -277,18 +277,18 @@ func (d Driver) Placeholder(i int) string {
 // pkVals must carry the driver's own value types, not display strings:
 // Postgres has no implicit cast, so binding a string for a bigint key
 // fails with "operator does not exist: bigint = text".
-func (d *DB) UpdateCell(ctx context.Context, table string, pk []string, pkVals []any, col string, val any) (int64, error) {
+func (d *DB) UpdateCell(ctx context.Context, q QualTable, pk []string, pkVals []any, col string, val any) (int64, error) {
 	if len(pk) == 0 || len(pk) != len(pkVals) {
-		return 0, fmt.Errorf("update %s: primary key value count does not match the key", table)
+		return 0, fmt.Errorf("update %s: primary key value count does not match the key", q.String())
 	}
-	q := d.Driver.QuoteIdent
+	qi := d.Driver.QuoteIdent
 	var b strings.Builder
-	fmt.Fprintf(&b, "UPDATE %s SET %s = %s WHERE ", q(table), q(col), d.Driver.Placeholder(1))
+	fmt.Fprintf(&b, "UPDATE %s SET %s = %s WHERE ", d.Driver.QuoteQual(q), qi(col), d.Driver.Placeholder(1))
 	for i, k := range pk {
 		if i > 0 {
 			b.WriteString(" AND ")
 		}
-		fmt.Fprintf(&b, "%s = %s", q(k), d.Driver.Placeholder(i+2))
+		fmt.Fprintf(&b, "%s = %s", qi(k), d.Driver.Placeholder(i+2))
 	}
 	args := make([]any, 0, len(pkVals)+1)
 	args = append(args, val)

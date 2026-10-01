@@ -12,7 +12,7 @@ type ForeignKey struct {
 	ToColumn   string
 }
 
-func (d *DB) ForeignKeys(ctx context.Context, table string) ([]ForeignKey, error) {
+func (d *DB) ForeignKeys(ctx context.Context, q QualTable) ([]ForeignKey, error) {
 	switch d.Driver {
 	case Postgres:
 		rows, err := d.SQL.QueryContext(ctx, `
@@ -20,11 +20,13 @@ SELECT c.relname, a.attname, c2.relname, a2.attname
 FROM pg_constraint o
 JOIN pg_class c ON c.oid = o.conrelid
 JOIN pg_class c2 ON c2.oid = o.confrelid
+JOIN pg_namespace nc ON nc.oid = c.relnamespace
+JOIN pg_namespace nc2 ON nc2.oid = c2.relnamespace
 JOIN LATERAL unnest(o.conkey, o.confkey) WITH ORDINALITY AS k(attnum, confnum, ord) ON true
 JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.attnum
 JOIN pg_attribute a2 ON a2.attrelid = c2.oid AND a2.attnum = k.confnum
-WHERE o.contype = 'f' AND (c.relname = $1 OR c2.relname = $1)
-ORDER BY 1, 2`, table)
+WHERE o.contype = 'f' AND ((c.relname = $1 AND nc.nspname = $2) OR (c2.relname = $1 AND nc2.nspname = $2))
+ORDER BY 1, 2`, q.Name, q.Schema, q.Name, q.Schema)
 		if err != nil {
 			return nil, err
 		}
@@ -43,7 +45,7 @@ ORDER BY 1, 2`, table)
 SELECT TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
 FROM information_schema.KEY_COLUMN_USAGE
 WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL
-AND (TABLE_NAME = ? OR REFERENCED_TABLE_NAME = ?) ORDER BY 1, 2`, table, table)
+AND (TABLE_NAME = ? OR REFERENCED_TABLE_NAME = ?) ORDER BY 1, 2`, q.Name, q.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -58,21 +60,22 @@ AND (TABLE_NAME = ? OR REFERENCED_TABLE_NAME = ?) ORDER BY 1, 2`, table, table)
 		}
 		return out, rows.Err()
 	default:
-		out, err := d.sqliteOutgoing(ctx, table)
+		out, err := d.sqliteOutgoing(ctx, q.Name)
 		if err != nil {
 			return nil, err
 		}
 		// Incoming: scan all user tables' foreign_key_list for refs to table.
+		// PRAGMA takes a bare table ident, never QuoteQual (see Columns).
 		names, err := d.ListTables(ctx)
 		if err != nil {
 			return nil, err
 		}
 		for _, n := range names {
-			if n == table {
+			if n == q.Name {
 				continue
 			}
-			q := fmt.Sprintf(`PRAGMA foreign_key_list(%s)`, d.Driver.QuoteIdent(n))
-			r, err := d.SQL.QueryContext(ctx, q)
+			qq := fmt.Sprintf(`PRAGMA foreign_key_list(%s)`, d.Driver.QuoteIdent(n))
+			r, err := d.SQL.QueryContext(ctx, qq)
 			if err != nil {
 				return nil, err
 			}
@@ -87,7 +90,7 @@ AND (TABLE_NAME = ? OR REFERENCED_TABLE_NAME = ?) ORDER BY 1, 2`, table, table)
 						loopErr = err
 						return
 					}
-					if to == table {
+					if to == q.Name {
 						out = append(out, ForeignKey{FromTable: n, FromColumn: from, ToTable: to, ToColumn: toCol})
 					}
 				}
@@ -126,7 +129,7 @@ func (d *DB) sqliteOutgoing(ctx context.Context, table string) ([]ForeignKey, er
 
 // AllForeignKeys aggregates ForeignKeys across tables and dedupes pairs.
 // Empty input returns nil. Order: first-seen table order, then FK order.
-func (d *DB) AllForeignKeys(ctx context.Context, tables []string) ([]ForeignKey, error) {
+func (d *DB) AllForeignKeys(ctx context.Context, tables []QualTable) ([]ForeignKey, error) {
 	if len(tables) == 0 {
 		return nil, nil
 	}
@@ -156,10 +159,10 @@ func (d *DB) AllForeignKeys(ctx context.Context, tables []string) ([]ForeignKey,
 // ListTables and one PRAGMA foreign_key_list per table, instead of the
 // N×N PRAGMA scan the per-table ForeignKeys path performs. Order is
 // first-seen table order, matching AllForeignKeys' documented contract.
-func (d *DB) sqliteAllForeignKeys(ctx context.Context, tables []string) ([]ForeignKey, error) {
+func (d *DB) sqliteAllForeignKeys(ctx context.Context, tables []QualTable) ([]ForeignKey, error) {
 	want := make(map[string]bool, len(tables))
 	for _, t := range tables {
-		want[t] = true
+		want[t.Name] = true
 	}
 	names, err := d.ListTables(ctx)
 	if err != nil {

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -259,6 +260,26 @@ func (e *Explorer) schemaOf(table string) string {
 		}
 	}
 	return found
+}
+
+// candidates returns every schema owning table, public first then alpha.
+func (e *Explorer) candidates(table string) []string {
+	var out []string
+	for _, s := range e.Schemas {
+		for _, tb := range s.Tables {
+			if tb.Name == table {
+				out = append(out, s.Name)
+				break
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if (out[i] == "public") != (out[j] == "public") {
+			return out[i] == "public"
+		}
+		return out[i] < out[j]
+	})
+	return out
 }
 
 func (e *Explorer) columnByName(schema, table, col string) (ColumnNode, bool) {

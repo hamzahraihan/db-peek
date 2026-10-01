@@ -136,18 +136,86 @@ ORDER BY 1`, schema)
 	}
 }
 
-func (d *DB) ApproxCount(ctx context.Context, schema, table string) (int64, error) {
+func (d *DB) ApproxCount(ctx context.Context, q QualTable) (int64, error) {
 	if d.Driver == Postgres {
 		var n int64
-		err := d.SQL.QueryRowContext(ctx, `SELECT reltuples::bigint FROM pg_class WHERE relname=$1`, table).Scan(&n)
+		err := d.SQL.QueryRowContext(ctx, `SELECT reltuples::bigint FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = $1 AND n.nspname = $2`, q.Name, q.Schema).Scan(&n)
 		if err == nil && n >= 0 {
 			return n, nil
 		}
 	}
 	var n int64
-	q := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, d.Driver.QuoteIdent(table))
-	if err := d.SQL.QueryRowContext(ctx, q).Scan(&n); err != nil {
+	qq := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, d.Driver.QuoteQual(q))
+	if err := d.SQL.QueryRowContext(ctx, qq).Scan(&n); err != nil {
 		return 0, err
 	}
 	return n, nil
+}
+
+func (d *DB) ResolveTable(ctx context.Context, name string) (QualTable, error) {
+	q, err := ParseQualTable(name)
+	if err != nil {
+		return QualTable{}, err
+	}
+	if d.Driver != Postgres {
+		// DEVIATION from brief verbatim (see task-3 report): the verbatim
+		// passthrough returned nil for missing sqlite/mysql tables, but
+		// TestResolveTableSQLitePassthrough demands a not-found error.
+		var existsQ string
+		switch d.Driver {
+		case MySQL:
+			existsQ = `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?)`
+		default:
+			existsQ = `SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type IN ('table','view') AND name = ?)`
+		}
+		var ok bool
+		if err := d.SQL.QueryRowContext(ctx, existsQ, q.Name).Scan(&ok); err != nil {
+			return QualTable{}, err
+		}
+		if !ok {
+			if q.Schema == "" {
+				return QualTable{}, fmt.Errorf("table %q not found", q.Name)
+			}
+			return QualTable{}, fmt.Errorf("table %q not found", q.String())
+		}
+		if q.Schema == "" {
+			return QualTable{Name: q.Name}, nil
+		}
+		return q, nil
+	}
+	if q.Schema != "" {
+		var ok bool
+		err := d.SQL.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = $1 AND table_name = $2)`, q.Schema, q.Name).Scan(&ok)
+		if err != nil {
+			return QualTable{}, err
+		}
+		if !ok {
+			return QualTable{}, fmt.Errorf("table %q not found", q.String())
+		}
+		return q, nil
+	}
+	rows, err := d.SQL.QueryContext(ctx, `SELECT table_schema FROM information_schema.tables WHERE table_name = $1 AND table_schema NOT IN ('pg_catalog','information_schema','auth','storage','realtime','extensions','graphql','graphql_public','supabase_functions','supabase_migrations','vault','pgsodium','pgsodium_masks','net','postgis','_postgis','tiger','tiger_data','topology','cron','_realtime','_supabase') AND table_schema NOT LIKE 'pg\_%' ESCAPE '\' AND table_schema NOT LIKE 'pg_temp_%' AND table_schema NOT LIKE 'pg_toast%' ORDER BY CASE WHEN table_schema='public' THEN 0 ELSE 1 END, table_schema`, q.Name)
+	if err != nil {
+		return QualTable{}, err
+	}
+	defer rows.Close()
+	var quals []QualTable
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return QualTable{}, err
+		}
+		quals = append(quals, QualTable{Schema: s, Name: q.Name})
+	}
+	if err := rows.Err(); err != nil {
+		return QualTable{}, err
+	}
+	switch len(quals) {
+	case 0:
+		return QualTable{}, fmt.Errorf("table %q not found", q.Name)
+	case 1:
+		return quals[0], nil
+	default:
+		return QualTable{}, AmbiguousErr(q.Name, quals)
+	}
 }

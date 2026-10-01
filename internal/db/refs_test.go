@@ -26,7 +26,7 @@ CREATE TABLE orders(id INTEGER PRIMARY KEY, customer_id INTEGER REFERENCES custo
 func TestForeignKeysSQLite(t *testing.T) {
 	d := openFKMem(t)
 	defer d.SQL.Close()
-	out, err := d.ForeignKeys(context.Background(), "orders")
+	out, err := d.ForeignKeys(context.Background(), QualTable{Name: "orders"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestForeignKeysSQLite(t *testing.T) {
 	if !found {
 		t.Fatalf("missing orders→customers fk in %v", out)
 	}
-	in, err := d.ForeignKeys(context.Background(), "customers")
+	in, err := d.ForeignKeys(context.Background(), QualTable{Name: "customers"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestForeignKeysSQLite(t *testing.T) {
 func TestForeignKeysSQLiteError(t *testing.T) {
 	d := openFKMem(t)
 	d.SQL.Close()
-	if _, err := d.ForeignKeys(context.Background(), "orders"); err == nil {
+	if _, err := d.ForeignKeys(context.Background(), QualTable{Name: "orders"}); err == nil {
 		t.Fatal("expected error on closed DB, got nil")
 	}
 }
@@ -65,7 +65,7 @@ func TestForeignKeysSQLiteError(t *testing.T) {
 func TestAllForeignKeysDedupe(t *testing.T) {
 	d := openFKMem(t)
 	defer d.SQL.Close()
-	out, err := d.AllForeignKeys(context.Background(), []string{"customers", "orders"})
+	out, err := d.AllForeignKeys(context.Background(), []QualTable{{Name: "customers"}, {Name: "orders"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,9 +94,9 @@ func TestAllForeignKeysSQLiteScalesLinearly(t *testing.T) {
 	if _, err := d.SQL.Exec(b.String()); err != nil {
 		t.Fatal(err)
 	}
-	tables := []string{"parent"}
+	tables := []QualTable{{Name: "parent"}}
 	for i := 0; i < n; i++ {
-		tables = append(tables, fmt.Sprintf("child%02d", i))
+		tables = append(tables, QualTable{Name: fmt.Sprintf("child%02d", i)})
 	}
 	pragmas.Store(0)
 	out, err := d.AllForeignKeys(context.Background(), tables)

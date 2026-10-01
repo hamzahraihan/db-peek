@@ -87,16 +87,17 @@ func (m *Model) loadDetailCtx(ctx context.Context, schema, table string) tea.Cmd
 	size := m.pageSize
 	seq := m.detailSeq
 	conn := m.connSeq
+	q := dbpkg.QualTable{Schema: schema, Name: table}
 	sampleCmd := func() tea.Msg {
-		cols, err := db.Columns(ctx, table)
+		cols, err := db.Columns(ctx, q)
 		if err != nil {
 			return detailLoadedMsg{table: table, schema: schema, err: err, colsErr: err, seq: seq, conn: conn}
 		}
-		idx, err := db.Indexes(ctx, table)
+		idx, err := db.Indexes(ctx, q)
 		if err != nil {
 			return detailLoadedMsg{table: table, schema: schema, err: err, seq: seq, conn: conn}
 		}
-		sample, err := db.PageRows(ctx, table, size, 0)
+		sample, err := db.PageRows(ctx, q, size, 0)
 		if err != nil {
 			return detailLoadedMsg{table: table, schema: schema, err: err, seq: seq, conn: conn}
 		}
@@ -111,20 +112,22 @@ func (m *Model) loadDetailCtx(ctx context.Context, schema, table string) tea.Cmd
 			conn:    conn,
 		}
 	}
-	return tea.Batch(sampleCmd, m.loadCount(ctx, table))
+	return tea.Batch(sampleCmd, m.loadCount(ctx, schema, table))
 }
 
 // loadCount resolves the exact row count. A count the sidebar already
-// fetched (m.counts) answers without touching the database.
-func (m *Model) loadCount(ctx context.Context, table string) tea.Cmd {
+// fetched (m.counts, keyed by QualTable.String()) answers without
+// touching the database.
+func (m *Model) loadCount(ctx context.Context, schema, table string) tea.Cmd {
 	db := m.db
 	seq := m.detailSeq
 	conn := m.connSeq
-	if cached, ok := m.counts[table]; ok {
+	q := dbpkg.QualTable{Schema: schema, Name: table}
+	if cached, ok := m.counts[q.String()]; ok {
 		return func() tea.Msg { return detailCountMsg{table: table, count: cached, seq: seq, conn: conn} }
 	}
 	return func() tea.Msg {
-		n, err := db.Count(ctx, table)
+		n, err := db.Count(ctx, q)
 		return detailCountMsg{table: table, count: n, seq: seq, conn: conn, err: err}
 	}
 }
@@ -132,11 +135,12 @@ func (m *Model) loadCount(ctx context.Context, table string) tea.Cmd {
 // loadRowsPage fetches one page of the current table for the rows tab.
 func (m *Model) loadRowsPage() tea.Cmd {
 	db, table, size, page := m.db, m.table, m.pageSize, m.page
+	q := dbpkg.QualTable{Schema: m.explorer.schemaOf(table), Name: table}
 	seq := m.detailSeq
 	conn := m.connSeq
 	ctx := m.newOpContext(15 * time.Second)
 	return func() tea.Msg {
-		sample, err := db.PageRows(ctx, table, size, page*size)
+		sample, err := db.PageRows(ctx, q, size, page*size)
 		if err != nil {
 			return rowsPageMsg{err: err, seq: seq, conn: conn}
 		}
@@ -184,7 +188,7 @@ func (m *Model) loadCounts(ctx context.Context, schema string, tables []string) 
 			go func() {
 				sem <- struct{}{}
 				defer func() { <-sem }()
-				n, err := db.ApproxCount(ctx, schema, t)
+				n, err := db.ApproxCount(ctx, dbpkg.QualTable{Schema: schema, Name: t})
 				ch <- res{table: t, count: n, err: err}
 			}()
 		}
@@ -193,10 +197,10 @@ func (m *Model) loadCounts(ctx context.Context, schema string, tables []string) 
 			r := <-ch
 			if r.err != nil {
 				// Latch: a failure renders "?" and is never retried.
-				out.errs[r.table] = true
+				out.errs[dbpkg.QualTable{Schema: schema, Name: r.table}.String()] = true
 				continue
 			}
-			out.counts[r.table] = r.count
+			out.counts[dbpkg.QualTable{Schema: schema, Name: r.table}.String()] = r.count
 		}
 		return out
 	}
@@ -233,7 +237,29 @@ func (m *Model) runQuery() tea.Cmd {
 		if tbl == "" {
 			return queryDoneMsg{sql: sql, affected: n, ms: ms, seq: seq, conn: conn, qbufID: qid}
 		}
-		preview, perr := db.PageRows(ctx, tbl, 20, 0)
+		// Never-silent rule: on pg a bare write target matching 2+ schemas
+		// must error, never preview a first-match schema. Same
+		// candidates-gate as recenterER, surfaced on the existing
+		// query-done error path with zero preview roundtrip. An explicit
+		// schema.table skips the gate (previewQual resolves it directly).
+		bare, qualified := tbl, false
+		if q, err := dbpkg.ParseQualTable(tbl); err == nil {
+			if q.Schema != "" {
+				qualified = true
+			} else {
+				bare = q.Name
+			}
+		}
+		if !qualified && db.Driver == dbpkg.Postgres && m.explorer.schemaOf(bare) == "" {
+			if cands := m.explorer.candidates(bare); len(cands) > 1 {
+				amb := make([]dbpkg.QualTable, len(cands))
+				for i, s := range cands {
+					amb[i] = dbpkg.QualTable{Schema: s, Name: bare}
+				}
+				return queryDoneMsg{sql: sql, affected: n, ms: time.Since(start).Milliseconds(), seq: seq, conn: conn, qbufID: qid, err: dbpkg.AmbiguousErr(bare, amb)}
+			}
+		}
+		preview, perr := db.PageRows(ctx, previewQual(m, tbl), 20, 0)
 		if perr != nil {
 			// Swallowed by design: affected-count is the source of truth.
 			return queryDoneMsg{sql: sql, affected: n, ms: time.Since(start).Milliseconds(), seq: seq, conn: conn, qbufID: qid}
@@ -246,11 +272,27 @@ func (m *Model) loadER(table string) tea.Cmd {
 	return m.loadERCtx(m.newOpContext(10*time.Second), table)
 }
 
+// previewQual scopes a write-preview target to its schema: an explicit
+// schema.table wins, otherwise the explorer resolves a bare
+// single-match (ambiguous pg stays bare — runQuery gates it first).
+func previewQual(m *Model, tbl string) dbpkg.QualTable {
+	if q, err := dbpkg.ParseQualTable(tbl); err == nil {
+		if q.Schema != "" {
+			return q
+		}
+		return dbpkg.QualTable{Schema: m.explorer.schemaOf(q.Name), Name: q.Name}
+	}
+	return dbpkg.QualTable{Schema: m.explorer.schemaOf(tbl), Name: tbl}
+}
+
 // loadERSchema fetches columns for every table plus all FKs (bounded
 // concurrency 4, 15s timeout). Tables come from the caller (current schema).
 func (m *Model) loadERSchema(schema string, tables []string) tea.Cmd {
-	_ = schema // scoping is explorer-side; db calls take plain table names
-	return m.loadERSchemaCtx(m.newOpContext(15*time.Second), schema, tables)
+	quals := make([]dbpkg.QualTable, len(tables))
+	for i, t := range tables {
+		quals[i] = dbpkg.QualTable{Schema: schema, Name: t}
+	}
+	return m.loadERSchemaCtx(m.newOpContext(15*time.Second), quals)
 }
 
 // loadERCtx is loadER under a caller-owned context, for the ER tab
@@ -259,47 +301,48 @@ func (m *Model) loadERSchema(schema string, tables []string) tea.Cmd {
 func (m *Model) loadERCtx(ctx context.Context, table string) tea.Cmd {
 	db, seq := m.db, m.erSeq
 	conn := m.connSeq
+	q := dbpkg.QualTable{Schema: m.explorer.schemaOf(table), Name: table}
 	if links, ok := m.erCache[table]; ok {
 		return func() tea.Msg { return erLoadedMsg{table: table, links: links, seq: seq, conn: conn} }
 	}
 	return func() tea.Msg {
-		links, err := db.ForeignKeys(ctx, table)
+		links, err := db.ForeignKeys(ctx, q)
 		return erLoadedMsg{table: table, links: links, seq: seq, err: err, conn: conn}
 	}
 }
 
 // loadERSchemaCtx is loadERSchema under a caller-owned context.
-func (m *Model) loadERSchemaCtx(ctx context.Context, schema string, tables []string) tea.Cmd {
+func (m *Model) loadERSchemaCtx(ctx context.Context, quals []dbpkg.QualTable) tea.Cmd {
 	db, seq := m.db, m.erSeq
 	conn := m.connSeq
 	return func() tea.Msg {
-		return erSchemaResult(ctx, db, seq, conn, tables)
+		return erSchemaResult(ctx, db, seq, conn, quals)
 	}
 }
 
 // erSchemaResult fetches columns for every table plus all FKs (bounded
-// concurrency 4). Tables come from the caller (current schema).
-func erSchemaResult(ctx context.Context, db *dbpkg.DB, seq, conn int, tables []string) erSchemaLoadedMsg {
+// concurrency 4). Tables come from the caller as quals (owning schema).
+func erSchemaResult(ctx context.Context, db *dbpkg.DB, seq, conn int, quals []dbpkg.QualTable) erSchemaLoadedMsg {
 	type res struct {
 		t    string
 		cols []dbpkg.Column
 		err  error
 	}
-	ch := make(chan res, len(tables))
+	ch := make(chan res, len(quals))
 	sem := make(chan struct{}, 4)
-	for _, t := range tables {
-		t := t
+	for _, qt := range quals {
+		qt := qt
 		go func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			cols, err := db.Columns(ctx, t)
-			ch <- res{t: t, cols: cols, err: err}
+			cols, err := db.Columns(ctx, qt)
+			ch <- res{t: qt.String(), cols: cols, err: err}
 		}()
 	}
 	byName := map[string][]dbpkg.Column{}
 	failed := map[string]bool{}
 	var firstErr error
-	for range tables {
+	for range quals {
 		r := <-ch
 		if r.err != nil {
 			if firstErr == nil {
@@ -313,16 +356,17 @@ func erSchemaResult(ctx context.Context, db *dbpkg.DB, seq, conn int, tables []s
 		}
 		byName[r.t] = r.cols
 	}
-	links, err := db.AllForeignKeys(ctx, tables)
+	links, err := db.AllForeignKeys(ctx, quals)
 	if err != nil && firstErr == nil {
 		firstErr = err
 	}
 	var out []erTable
-	for _, t := range tables {
-		if failed[t] {
+	for _, qt := range quals {
+		t := qt.Name
+		if failed[qt.String()] {
 			continue
 		}
-		cols := byName[t]
+		cols := byName[qt.String()]
 		pk := map[string]bool{}
 		fk := map[string]bool{}
 		for _, c := range cols {

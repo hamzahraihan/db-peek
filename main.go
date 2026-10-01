@@ -164,20 +164,31 @@ or a saved NAME. Env DATABASE_URL fills conn when no argument is given.
 			fmt.Println(n)
 		}
 	case *schemaF != "":
-		cols, err := db.Columns(ctx, *schemaF)
+		qt, err := dbpkg.ParseQualTable(*schemaF)
+		if err != nil {
+			fatal(err)
+		}
+		if qt.Schema == "" {
+			if r, rerr := db.ResolveTable(ctx, qt.Name); rerr != nil {
+				fatal(rerr)
+			} else {
+				qt = r
+			}
+		}
+		cols, err := db.Columns(ctx, qt)
 		if err != nil {
 			fatal(err)
 		}
 		if len(cols) == 0 {
-			fatal(fmt.Errorf("table %q not found", *schemaF))
+			fatal(fmt.Errorf("table %q not found", qt.String()))
 		}
-		fmt.Printf("== %s: columns ==\n", *schemaF)
+		fmt.Printf("== %s: columns ==\n", qt.String())
 		render([]string{"column", "type", "null", "default", "extra"}, colRows(cols))
-		idx, err := db.Indexes(ctx, *schemaF)
+		idx, err := db.Indexes(ctx, qt)
 		if err != nil {
 			fatal(err)
 		}
-		fmt.Printf("\n== %s: indexes ==\n", *schemaF)
+		fmt.Printf("\n== %s: indexes ==\n", qt.String())
 		if len(idx) == 0 {
 			fmt.Println("(none)")
 			return
@@ -193,11 +204,22 @@ or a saved NAME. Env DATABASE_URL fills conn when no argument is given.
 			}
 		}
 	case *rowsF != "":
-		n, err := db.Count(ctx, *rowsF)
-		if err == nil {
-			fmt.Printf("== %s (%d rows, limit %d offset %d) ==\n", *rowsF, n, *limitF, *offsetF)
+		qt, err := dbpkg.ParseQualTable(*rowsF)
+		if err != nil {
+			fatal(err)
 		}
-		s, err := db.PageRows(ctx, *rowsF, *limitF, *offsetF)
+		if qt.Schema == "" {
+			if r, rerr := db.ResolveTable(ctx, qt.Name); rerr != nil {
+				fatal(rerr)
+			} else {
+				qt = r
+			}
+		}
+		n, err := db.Count(ctx, qt)
+		if err == nil {
+			fmt.Printf("== %s (%d rows, limit %d offset %d) ==\n", qt.String(), n, *limitF, *offsetF)
+		}
+		s, err := db.PageRows(ctx, qt, *limitF, *offsetF)
 		if err != nil {
 			fatal(err)
 		}

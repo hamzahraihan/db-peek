@@ -32,7 +32,7 @@ func TestCountsLoadedMsgApplies(t *testing.T) {
 	m.explorer = fixtureExplorer()
 	u, _ := m.Update(countsLoadedMsg{
 		schema: "public",
-		counts: map[string]int64{"customers": 777, "orders": 12},
+		counts: map[string]int64{"public.customers": 777, "public.orders": 12},
 		errs:   map[string]bool{},
 	})
 	m = u.(Model)
@@ -44,7 +44,7 @@ func TestCountsLoadedMsgApplies(t *testing.T) {
 					t.Fatalf("count not applied: %+v", tb)
 				}
 			}
-			if m.counts[tb.Name] != tb.Count {
+			if m.counts[db.QualTable{Schema: s.Name, Name: tb.Name}.String()] != tb.Count {
 				t.Fatalf("m.counts must mirror the sidebar: %+v vs %d", tb, m.counts[tb.Name])
 			}
 		}
@@ -56,15 +56,15 @@ func TestCountsLoadedMsgLatchesErr(t *testing.T) {
 	m.explorer = fixtureExplorer()
 	u, cmd := m.Update(countsLoadedMsg{
 		schema: "public",
-		counts: map[string]int64{"orders": 3},
-		errs:   map[string]bool{"customers": true},
+		counts: map[string]int64{"public.orders": 3},
+		errs:   map[string]bool{"public.customers": true},
 	})
 	m = u.(Model)
 	tb, ok := m.explorer.tableByName("public", "customers")
 	if !ok || !tb.CountErr {
 		t.Fatalf("err must latch CountErr: %+v ok=%v", tb, ok)
 	}
-	if _, cached := m.counts["customers"]; cached {
+	if _, cached := m.counts["public.customers"]; cached {
 		t.Fatal("a failed count must not enter the cache")
 	}
 	if out := m.explorer.Render(34, 20); !strings.Contains(out, "?") {
@@ -124,7 +124,7 @@ func TestLoadCountUsesSidebarCache(t *testing.T) {
 	m.db = openMemoryDB(t)
 	m.db.Close()
 	m.counts = map[string]int64{"orders": 42}
-	msg, ok := m.loadCount(t.Context(), "orders")().(detailCountMsg)
+	msg, ok := m.loadCount(t.Context(), "", "orders")().(detailCountMsg)
 	if !ok {
 		t.Fatalf("want a detailCountMsg, got %T", msg)
 	}

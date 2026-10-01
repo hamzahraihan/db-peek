@@ -23,7 +23,7 @@ func TestSampleRawKeepsUntruncatedValues(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s, err := d.PageRows(context.Background(), "t", 10, 0)
+	s, err := d.PageRows(context.Background(), QualTable{Name: "t"}, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

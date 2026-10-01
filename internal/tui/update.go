@@ -230,15 +230,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			for ti := range m.explorer.Schemas[si].Tables {
 				name := m.explorer.Schemas[si].Tables[ti].Name
-				if msg.errs[name] {
+				key := dbpkg.QualTable{Schema: msg.schema, Name: name}.String()
+				if msg.errs[key] {
 					m.explorer.Schemas[si].Tables[ti].CountErr = true
 					continue
 				}
-				if n, ok := msg.counts[name]; ok {
+				if n, ok := msg.counts[key]; ok {
 					m.explorer.Schemas[si].Tables[ti].Count = n
 					m.explorer.Schemas[si].Tables[ti].CountOK = true
 					m.explorer.Schemas[si].Tables[ti].CountErr = false
-					m.counts[name] = n
+					m.counts[key] = n
 				}
 			}
 		}
@@ -1340,19 +1341,33 @@ func (m Model) erKeys(_ tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 	case "r":
 		m.setERSchema(erSchemaState{tables: m.erSchema.tables, links: m.erSchema.links})
 		m.erSeq++
-		var names []string
+		var quals []dbpkg.QualTable
 		for _, t := range m.erSchema.tables {
-			names = append(names, t.name)
+			quals = append(quals, dbpkg.QualTable{Schema: m.explorer.schemaOf(t.name), Name: t.name})
 		}
-		if len(names) == 0 && m.table != "" {
-			names = []string{m.table}
+		if len(quals) == 0 && m.table != "" {
+			quals = []dbpkg.QualTable{{Schema: m.explorer.schemaOf(m.table), Name: m.table}}
+		}
+		// Never-silent rule: on pg an ambiguous center surfaces the
+		// resolver-style error with zero DB calls instead of reloading a
+		// possibly-wrong schema. Same candidates-gate as recenterER.
+		if m.table != "" && m.db != nil && m.db.Driver == dbpkg.Postgres && m.explorer.schemaOf(m.table) == "" {
+			if cands := m.explorer.candidates(m.table); len(cands) > 1 {
+				amb := make([]dbpkg.QualTable, len(cands))
+				for i, s := range cands {
+					amb[i] = dbpkg.QualTable{Schema: s, Name: m.table}
+				}
+				m.loading = false
+				m.err = dbpkg.AmbiguousErr(m.table, amb).Error()
+				return m, nil
+			}
 		}
 		// Same shared-context rule as setTab: one operation, one cancel.
 		ctx := m.newOpContext(15 * time.Second)
 		if m.table != "" {
-			return m, tea.Batch(m.loadERCtx(ctx, m.table), m.loadERSchemaCtx(ctx, "", names))
+			return m, tea.Batch(m.loadERCtx(ctx, m.table), m.loadERSchemaCtx(ctx, quals))
 		}
-		return m, m.loadERSchemaCtx(ctx, "", names)
+		return m, m.loadERSchemaCtx(ctx, quals)
 	}
 	if key == "tab" {
 		return m, nil
@@ -1426,8 +1441,23 @@ func (m Model) recenterER(name string) (Model, tea.Cmd) {
 	m.page = 0
 	m.detailSeq++
 	// No explorer schema: the ER diagram owns the selection here, so the
-	// tree node's columns are left alone.
-	return m, m.loadDetail("", name)
+	// tree node's columns are left alone. On pg an ambiguous bare name
+	// surfaces the resolver-style error with zero DB calls instead of
+	// guessing a schema.
+	schema := m.explorer.schemaOf(name)
+	if schema == "" && m.db != nil && m.db.Driver == dbpkg.Postgres {
+		if cands := m.explorer.candidates(name); len(cands) > 1 {
+			quals := make([]dbpkg.QualTable, len(cands))
+			for i, s := range cands {
+				quals[i] = dbpkg.QualTable{Schema: s, Name: name}
+			}
+			// surface without a DB roundtrip: reuse the seq-guarded error path
+			m.loading = false
+			m.err = dbpkg.AmbiguousErr(name, quals).Error()
+			return m, nil
+		}
+	}
+	return m, m.loadDetail(schema, name)
 }
 
 // inspectTable previews one table in the detail pane; shared by sidebar

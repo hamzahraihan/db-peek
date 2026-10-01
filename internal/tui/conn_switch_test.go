@@ -78,7 +78,7 @@ func TestStaleConnMessagesDropped(t *testing.T) {
 	}
 	u, _ := m.Update(countsLoadedMsg{
 		schema: "public",
-		counts: map[string]int64{"customers": 777},
+		counts: map[string]int64{"public.customers": 777},
 		errs:   map[string]bool{},
 		conn:   old,
 	})
@@ -86,7 +86,7 @@ func TestStaleConnMessagesDropped(t *testing.T) {
 	if tb, _ := m.explorer.tableByName("public", "customers"); tb.CountOK || tb.Count == 777 {
 		t.Fatalf("stale-conn count must be dropped, got %+v", tb)
 	}
-	if _, ok := m.counts["customers"]; ok {
+	if _, ok := m.counts["public.customers"]; ok {
 		t.Fatal("stale-conn counts must not populate the cache")
 	}
 

@@ -46,7 +46,7 @@ func insertUsers(t *testing.T, m Model, rows ...[]any) Model {
 			t.Fatal(err)
 		}
 	}
-	s, err := m.db.PageRows(context.Background(), "users", 10, 0)
+	s, err := m.db.PageRows(context.Background(), dbpkg.QualTable{Name: "users"}, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestCellEditNeedsAPrimaryKey(t *testing.T) {
 func TestCellEditEscCancels(t *testing.T) {
 	m := cellEditModel(t, `CREATE TABLE users(id INTEGER PRIMARY KEY, name TEXT)`)
 	m = insertUsers(t, m, []any{int64(1), "original"})
-	s, err := m.db.PageRows(context.Background(), "users", 10, 0)
+	s, err := m.db.PageRows(context.Background(), dbpkg.QualTable{Name: "users"}, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestCellEditEscCancels(t *testing.T) {
 func TestCellEditOverlayKeepsRowCount(t *testing.T) {
 	m := cellEditModel(t, `CREATE TABLE users(id INTEGER PRIMARY KEY, name TEXT)`)
 	m = insertUsers(t, m, []any{int64(1), "a"}, []any{int64(2), "b"}, []any{int64(3), "c"})
-	s, err := m.db.PageRows(context.Background(), "users", 10, 0)
+	s, err := m.db.PageRows(context.Background(), dbpkg.QualTable{Name: "users"}, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
