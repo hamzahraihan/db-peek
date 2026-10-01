@@ -219,7 +219,7 @@ func (d *DB) ListTables(ctx context.Context) ([]string, error) {
 }
 
 // Columns returns ordered column metadata for one table.
-func (d *DB) Columns(ctx context.Context, table string) ([]Column, error) {
+func (d *DB) Columns(ctx context.Context, q QualTable) ([]Column, error) {
 	switch d.Driver {
 	case Postgres:
 		rows, err := d.SQL.QueryContext(ctx, `
@@ -228,7 +228,7 @@ SELECT column_name, data_type, is_nullable,
        COALESCE(CASE WHEN character_maximum_length IS NOT NULL
                      THEN '(' || character_maximum_length || ')' ELSE '' END, '')
 FROM information_schema.columns
-WHERE table_name = $1 ORDER BY ordinal_position`, table)
+WHERE table_name = $1 AND table_schema = $2 ORDER BY ordinal_position`, q.Name, q.Schema)
 		if err != nil {
 			return nil, err
 		}
@@ -249,7 +249,7 @@ WHERE table_name = $1 ORDER BY ordinal_position`, table)
 SELECT column_name, column_type, is_nullable, COALESCE(column_default, ''),
        CONCAT(column_key, CASE WHEN extra <> '' THEN ' ' || extra ELSE '' END)
 FROM information_schema.columns
-WHERE table_schema = DATABASE() AND table_name = ? ORDER BY ordinal_position`, table)
+WHERE table_schema = DATABASE() AND table_name = ? ORDER BY ordinal_position`, q.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -268,8 +268,10 @@ WHERE table_schema = DATABASE() AND table_name = ? ORDER BY ordinal_position`, t
 		}
 		return out, rows.Err()
 	default:
-		q := fmt.Sprintf(`PRAGMA table_info(%s)`, d.Driver.QuoteIdent(table))
-		rows, err := d.SQL.QueryContext(ctx, q)
+		// PRAGMA takes a bare table ident, not a qualified "s"."t"
+		// (syntax error); sqlite ignores Schema, quoting only the name.
+		qq := fmt.Sprintf(`PRAGMA table_info(%s)`, d.Driver.QuoteIdent(q.Name))
+		rows, err := d.SQL.QueryContext(ctx, qq)
 		if err != nil {
 			return nil, err
 		}
@@ -304,7 +306,7 @@ WHERE table_schema = DATABASE() AND table_name = ? ORDER BY ordinal_position`, t
 // PrimaryKey returns the table's primary-key columns in key order, or
 // nil when it has none. Cell editing needs the key to address exactly
 // one row, so "no key" is a normal answer, not an error.
-func (d *DB) PrimaryKey(ctx context.Context, table string) ([]string, error) {
+func (d *DB) PrimaryKey(ctx context.Context, q QualTable) ([]string, error) {
 	var (
 		rows *sql.Rows
 		err  error
@@ -314,18 +316,20 @@ func (d *DB) PrimaryKey(ctx context.Context, table string) ([]string, error) {
 		rows, err = d.SQL.QueryContext(ctx, `
 SELECT a.attname
 FROM pg_index i
+JOIN pg_class c ON c.oid = i.indrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
 JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-WHERE i.indrelid = $1::regclass AND i.indisprimary
-ORDER BY array_position(i.indkey, a.attnum)`, table)
+WHERE c.relname = $1 AND n.nspname = $2 AND i.indisprimary
+ORDER BY array_position(i.indkey, a.attnum)`, q.Name, q.Schema)
 	case MySQL:
 		rows, err = d.SQL.QueryContext(ctx, `
 SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE
 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = 'PRIMARY'
-ORDER BY ORDINAL_POSITION`, table)
+ORDER BY ORDINAL_POSITION`, q.Name)
 	default:
 		// PRAGMA table_info already encodes the key as Extra = "PK(n)";
 		// reuse it rather than issuing a second statement.
-		cols, cerr := d.Columns(ctx, table)
+		cols, cerr := d.Columns(ctx, q)
 		if cerr != nil {
 			return nil, cerr
 		}
@@ -367,11 +371,11 @@ ORDER BY ORDINAL_POSITION`, table)
 }
 
 // Indexes returns index metadata for one table.
-func (d *DB) Indexes(ctx context.Context, table string) ([]Index, error) {
+func (d *DB) Indexes(ctx context.Context, q QualTable) ([]Index, error) {
 	switch d.Driver {
 	case Postgres:
 		rows, err := d.SQL.QueryContext(ctx,
-			`SELECT indexname, indexdef FROM pg_indexes WHERE tablename = $1 ORDER BY indexname`, table)
+			`SELECT indexname, indexdef FROM pg_indexes WHERE tablename = $1 AND schemaname = $2 ORDER BY indexname`, q.Name, q.Schema)
 		if err != nil {
 			return nil, err
 		}
@@ -390,7 +394,7 @@ func (d *DB) Indexes(ctx context.Context, table string) ([]Index, error) {
 		}
 		return out, rows.Err()
 	case MySQL:
-		q := fmt.Sprintf(`SHOW INDEX FROM %s`, d.Driver.QuoteIdent(table))
+		q := fmt.Sprintf(`SHOW INDEX FROM %s`, d.Driver.QuoteQual(q))
 		rows, err := d.SQL.QueryContext(ctx, q)
 		if err != nil {
 			return nil, err
@@ -453,7 +457,8 @@ func (d *DB) Indexes(ctx context.Context, table string) ([]Index, error) {
 		// PRAGMA index_list(table) reports the authoritative unique flag
 		// (auto-index DDL is NULL in sqlite_master, so DDL sniffing misses it).
 		uniqByName := map[string]string{}
-		if lr, err := d.SQL.QueryContext(ctx, fmt.Sprintf(`PRAGMA index_list(%s)`, d.Driver.QuoteIdent(table))); err == nil {
+		// PRAGMA takes a bare table ident (see Columns); sqlite ignores Schema.
+		if lr, err := d.SQL.QueryContext(ctx, fmt.Sprintf(`PRAGMA index_list(%s)`, d.Driver.QuoteIdent(q.Name))); err == nil {
 			defer lr.Close()
 			for lr.Next() {
 				var seq, unique int
@@ -470,7 +475,7 @@ func (d *DB) Indexes(ctx context.Context, table string) ([]Index, error) {
 			}
 		}
 		rows, err := d.SQL.QueryContext(ctx,
-			`SELECT name, sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? ORDER BY name`, table)
+			`SELECT name, sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? ORDER BY name`, q.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -521,10 +526,10 @@ func (d *DB) sqliteIndexColumns(ctx context.Context, index string) (string, erro
 }
 
 // Count returns the exact row count for one table.
-func (d *DB) Count(ctx context.Context, table string) (int64, error) {
+func (d *DB) Count(ctx context.Context, q QualTable) (int64, error) {
 	var n int64
-	q := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, d.Driver.QuoteIdent(table))
-	if err := d.SQL.QueryRowContext(ctx, q).Scan(&n); err != nil {
+	qq := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, d.Driver.QuoteQual(q))
+	if err := d.SQL.QueryRowContext(ctx, qq).Scan(&n); err != nil {
 		return 0, err
 	}
 	return n, nil
@@ -532,21 +537,21 @@ func (d *DB) Count(ctx context.Context, table string) (int64, error) {
 
 // SampleRows returns up to limit recent rows (highest ROWID/ctid order is
 // engine-defined; we use no ORDER BY to keep it a cheap heap scan preview).
-func (d *DB) SampleRows(ctx context.Context, table string, limit int) (*Sample, error) {
-	return d.PageRows(ctx, table, limit, 0)
+func (d *DB) SampleRows(ctx context.Context, q QualTable, limit int) (*Sample, error) {
+	return d.PageRows(ctx, q, limit, 0)
 }
 
 // PageRows returns one page of rows: up to limit rows skipping offset.
 // LIMIT/OFFSET syntax is shared by postgres, mysql, and sqlite.
-func (d *DB) PageRows(ctx context.Context, table string, limit, offset int) (*Sample, error) {
+func (d *DB) PageRows(ctx context.Context, q QualTable, limit, offset int) (*Sample, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 10
 	}
 	if offset < 0 {
 		offset = 0
 	}
-	q := fmt.Sprintf(`SELECT * FROM %s LIMIT %d OFFSET %d`, d.Driver.QuoteIdent(table), limit, offset)
-	return d.queryToSample(ctx, q)
+	qq := fmt.Sprintf(`SELECT * FROM %s LIMIT %d OFFSET %d`, d.Driver.QuoteQual(q), limit, offset)
+	return d.queryToSample(ctx, qq)
 }
 
 // Query runs an arbitrary SELECT and captures up to 200 rows.

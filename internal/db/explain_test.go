@@ -59,14 +59,14 @@ func TestPrimaryKeySQLite(t *testing.T) {
 	if _, err := d.SQL.Exec(`CREATE TABLE notes(id INTEGER, body TEXT)`); err != nil {
 		t.Fatal(err)
 	}
-	pk, err := d.PrimaryKey(context.Background(), "users")
+	pk, err := d.PrimaryKey(context.Background(), QualTable{Name: "users"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(pk) != 1 || pk[0] != "id" {
 		t.Fatalf("want [id], got %v", pk)
 	}
-	none, err := d.PrimaryKey(context.Background(), "notes")
+	none, err := d.PrimaryKey(context.Background(), QualTable{Name: "notes"})
 	if err != nil {
 		t.Fatalf("a keyless table is a normal answer, got %v", err)
 	}
@@ -85,7 +85,7 @@ func TestPrimaryKeyComposite(t *testing.T) {
 	if _, err := d.SQL.Exec(`CREATE TABLE t(a TEXT, b TEXT, v TEXT, PRIMARY KEY (b, a))`); err != nil {
 		t.Fatal(err)
 	}
-	pk, err := d.PrimaryKey(context.Background(), "t")
+	pk, err := d.PrimaryKey(context.Background(), QualTable{Name: "t"})
 	if err != nil {
 		t.Fatal(err)
 	}

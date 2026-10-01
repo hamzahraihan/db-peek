@@ -1,6 +1,9 @@
 package db
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestParseQualTable(t *testing.T) {
 	q, err := ParseQualTable("analytics.users")
@@ -40,5 +43,28 @@ func TestQuoteQualEscapes(t *testing.T) {
 	}
 	if got := SQLite.QuoteQual(QualTable{Name: "t"}); got != `"t"` {
 		t.Fatalf("bare quote = %q", got)
+	}
+}
+
+func TestQualSchemaIgnoredSQLite(t *testing.T) {
+	d := openMem(t)
+	defer d.SQL.Close()
+	ctx := context.Background()
+	bare, err := d.Columns(ctx, QualTable{Name: "users"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	qual, err := d.Columns(ctx, QualTable{Schema: "main", Name: "users"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bare) != len(qual) {
+		t.Fatalf("bare %d cols vs qual %d cols", len(bare), len(qual))
+	}
+	if _, err := d.Count(ctx, QualTable{Schema: "main", Name: "users"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.PageRows(ctx, QualTable{Schema: "main", Name: "users"}, 5, 0); err != nil {
+		t.Fatal(err)
 	}
 }
