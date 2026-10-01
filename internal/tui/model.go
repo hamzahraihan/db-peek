@@ -57,8 +57,9 @@ type Model struct {
 	indexes     []dbpkg.Index
 	sample      *dbpkg.Sample
 	count       int64
-	// counts caches the sidebar's approximate counts per table name so
-	// opening a table whose count is already known costs no query.
+	// counts caches the sidebar's approximate counts keyed by
+	// QualTable.String() so opening a table whose count is already
+	// known costs no query.
 	counts    map[string]int64
 	page      int // 0-based page in the rows tab
 	pageSize  int // rows per page: one of pageSizes
@@ -375,23 +376,23 @@ func (m *Model) setTab(i int) tea.Cmd {
 		if m.erSchema.loaded {
 			return nil
 		}
-		var names []string
+		var quals []dbpkg.QualTable
 		for _, s := range m.explorer.Schemas {
 			for _, tb := range s.Tables {
-				names = append(names, tb.Name)
+				quals = append(quals, dbpkg.QualTable{Schema: s.Name, Name: tb.Name})
 			}
 		}
-		if len(names) == 0 && m.table != "" {
-			names = []string{m.table}
+		if len(quals) == 0 && m.table != "" {
+			quals = []dbpkg.QualTable{{Schema: m.explorer.schemaOf(m.table), Name: m.table}}
 		}
 		// The per-table FK load and the schema load must share one
 		// cancellable context: constructing a second would cancel the
 		// first, leaving the legacy view stuck on "(no foreign keys)".
 		ctx := m.newOpContext(15 * time.Second)
 		if m.table != "" {
-			return tea.Batch(m.loadERCtx(ctx, m.table), m.loadERSchemaCtx(ctx, "", names))
+			return tea.Batch(m.loadERCtx(ctx, m.table), m.loadERSchemaCtx(ctx, quals))
 		}
-		return m.loadERSchemaCtx(ctx, "", names)
+		return m.loadERSchemaCtx(ctx, quals)
 	}
 	m.sizeTables()
 	return nil

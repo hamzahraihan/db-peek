@@ -162,14 +162,15 @@ func (m *Model) submitCellEdit() tea.Cmd {
 // pkForTable memoizes the primary key for the session; it costs a query
 // on SQLite only the first time a table is edited.
 func (m *Model) pkForTable(ctx context.Context, table string) ([]string, error) {
-	if m.pkMemoFor == table {
+	q := dbpkg.QualTable{Schema: m.explorer.schemaOf(table), Name: table}
+	if m.pkMemoFor == q.String() {
 		return m.pkMemoCols, nil
 	}
-	pk, err := m.db.PrimaryKey(ctx, table)
+	pk, err := m.db.PrimaryKey(ctx, q)
 	if err != nil {
 		return nil, err
 	}
-	m.pkMemoFor, m.pkMemoCols = table, pk
+	m.pkMemoFor, m.pkMemoCols = q.String(), pk
 	return pk, nil
 }
 
