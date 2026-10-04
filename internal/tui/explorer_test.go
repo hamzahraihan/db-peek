@@ -80,8 +80,8 @@ func TestNewExplorerExpandsPublicFirst(t *testing.T) {
 func TestExplorerRenderGoldSelection(t *testing.T) {
 	e := fixtureExplorer()
 	out := render256(e.Render(34, 20))
-	if !strings.Contains(out, "explorer") {
-		t.Fatalf("missing header:\n%s", out)
+	if !strings.Contains(out, "● shop") {
+		t.Fatalf("missing connection header:\n%s", out)
 	}
 	if !strings.Contains(out, "48;5;172m") {
 		t.Fatalf("sidebar selection must use gold bg 172 (#CA8A04), got:\n%s", out)
