@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"db-peek/internal/db"
 	"db-peek/internal/saved"
@@ -137,8 +138,9 @@ func TestExplorerClickPreviews(t *testing.T) {
 	m := browseModel(t)
 	m.explorer = fixtureExplorer()
 	m.loading = false
-	// Bordered layout: first tree row at explorerFirstRow=5, orders idx1 → y=6.
-	u, cmd := m.Update(testClick(2, 6))
+	// Bordered layout: orders is the first tree row, one below
+	// explorerFirstRow.
+	u, cmd := m.Update(testClick(2, explorerFirstRow+1))
 	m = u.(Model)
 	if cmd == nil || m.table != "orders" {
 		t.Fatalf("want orders previewed, got %q", m.table)
@@ -148,9 +150,9 @@ func TestExplorerClickPreviews(t *testing.T) {
 func TestSidebarClickPreviewsInDetail(t *testing.T) {
 	m := browseModel(t)
 	// Fixture rows: 0=schema public, 1=orders, 2=col id, 3=col status,
-	// 4=customers. First tree row lands at explorerFirstRow=5, so
-	// orders sits at y=6 and customers at y=9.
-	u, cmd := m.Update(testClick(2, 6))
+	// 4=customers. The tree starts on explorerFirstRow, so orders sits
+	// one row below it and customers three rows below.
+	u, cmd := m.Update(testClick(2, explorerFirstRow+1))
 	m = u.(Model)
 	if cmd == nil || m.table != "orders" || m.focusDetail || m.detailSeq != 1 {
 		t.Fatalf("want orders previewed seq 1 staying in sidebar, got %q seq %d focus=%v", m.table, m.detailSeq, m.focusDetail)
@@ -159,9 +161,9 @@ func TestSidebarClickPreviewsInDetail(t *testing.T) {
 	// and the seq bumps so the stale orders reply is ignored on arrival.
 	// loading is still true after click 1; reset to allow click 2.
 	// NOTE: click 1 toggled orders collapsed, so customers slid from
-	// idx 4 to idx 2 (y=7).
+	// idx 4 to idx 2.
 	m.loading = false
-	u2, cmd2 := m.Update(testClick(2, 7))
+	u2, cmd2 := m.Update(testClick(2, explorerFirstRow+2))
 	m = u2.(Model)
 	if cmd2 == nil || m.table != "customers" || m.detailSeq != 2 {
 		t.Fatalf("want customers re-selected seq 2, got %q seq %d", m.table, m.detailSeq)
@@ -234,18 +236,18 @@ func TestRegexFiltering(t *testing.T) {
 }
 
 func TestFilteredMouseChrome(t *testing.T) {
-	// Explorer equivalent: the first tree row lands at explorerFirstRow=5
-	// in every filter state (border+title+conn+separator chrome above it).
+	// Explorer equivalent: the first tree row lands on
+	// explorerFirstRow in every filter state (conn + framed field above).
 	m := browseModel(t)
 	m.explorer.SetFilter("cust")
 	m.resizeBrowse()
-	r, ok := m.explorer.RowAt(5 - explorerFirstRow)
+	r, ok := m.explorer.RowAt(0)
 	if !ok || r.Kind != RowSchema {
-		t.Fatalf("want schema row at y=5 when filtered, got %+v ok=%v", r, ok)
+		t.Fatalf("want schema row at the first tree row when filtered, got %+v ok=%v", r, ok)
 	}
-	r, ok = m.explorer.RowAt(6 - explorerFirstRow)
+	r, ok = m.explorer.RowAt(1)
 	if !ok || r.Kind != RowTable || r.Table != "customers" {
-		t.Fatalf("want customers at y=6 when filtered, got %+v ok=%v", r, ok)
+		t.Fatalf("want customers in the second tree row, got %+v ok=%v", r, ok)
 	}
 }
 
@@ -325,11 +327,10 @@ func TestSidebarFilterQDoesNotQuit(t *testing.T) {
 }
 
 func TestExplorerConnRowClickIsNoop(t *testing.T) {
-	// Clicks on the conn row (y==3, shifted down by the top border) away
-	// from × are no-ops.
+	// Clicks on the conn row away from × are no-ops.
 	m := browseModel(t)
 	m.loading = false
-	u, cmd := m.Update(testClick(2, 3))
+	u, cmd := m.Update(testClick(2, sideConnRow))
 	m = u.(Model)
 	if cmd != nil || m.table != "" || m.screen != screenBrowse {
 		t.Fatalf("conn click must be noop, got table=%q screen=%d cmd=%v", m.table, m.screen, cmd)
@@ -341,10 +342,88 @@ func TestExplorerConnRowClickIsNoop(t *testing.T) {
 	m2 := browseModel(t)
 	m2.loading = false
 	m2.db = nil
-	u, _ = m2.Update(testClick(m2.sidebarW-2, 3))
+	u, _ = m2.Update(testClick(m2.sidebarW-2, sideConnRow))
 	m2 = u.(Model)
 	if m2.screen != screenConns {
 		t.Fatalf("× click must disconnect, got screen=%d", m2.screen)
+	}
+}
+
+// The search field is always on screen, so a click on it must behave
+// like "/": focus the input, and its × clears the applied filter.
+func TestSidebarSearchRowClickFocusesAndClears(t *testing.T) {
+	m := browseModel(t)
+	m.loading = false
+	u, _ := m.Update(testClick(4, sideSearchRow))
+	m = u.(Model)
+	if !m.filtering || !m.filterInput.Focused() {
+		t.Fatalf("clicking the search row must focus the field, filtering=%v", m.filtering)
+	}
+	for _, r := range "cust" {
+		u, _ = m.Update(testKey(string(r)))
+		m = u.(Model)
+	}
+	u, _ = m.Update(testKey("enter")) // commit: filter stays applied, blurred
+	m = u.(Model)
+	if m.explorer.Filter != "cust" {
+		t.Fatalf("setup: want applied filter, got %q", m.explorer.Filter)
+	}
+	// × sits in the frame's last content cell, inside the field box.
+	u, _ = m.Update(testClick(m.searchClearX(), sideSearchRow))
+	m = u.(Model)
+	if m.filtering || m.explorer.Filter != "" || m.filterInput.Value() != "" {
+		t.Fatalf("× must clear the filter, filtering=%v filter=%q input=%q",
+			m.filtering, m.explorer.Filter, m.filterInput.Value())
+	}
+	if n := len(m.explorer.VisibleRows()); n != 5 {
+		t.Fatalf("cleared filter must restore every row, got %d", n)
+	}
+}
+
+// The field is framed, always on screen, and the tree keeps starting on
+// explorerFirstRow whether or not the field has focus.
+func TestSidebarSearchFieldFramedAndAlwaysVisible(t *testing.T) {
+	m := browseModel(t)
+	lines := func() []string {
+		out := strings.Split(m.viewString(), "\n")
+		for i, ln := range out {
+			out[i] = ansi.Strip(ln)
+		}
+		return out
+	}
+	for _, filtering := range []bool{false, true} {
+		m.filtering = filtering
+		l := lines()
+		if !strings.Contains(l[sideSearchRow], "filter tables") {
+			t.Fatalf("filtering=%v: field row must show the input:\n%s", filtering, l[sideSearchRow])
+		}
+		// The frame wraps the field: box corners on the rules, verticals
+		// on the content row, and the rules carry the pane's inner width.
+		for _, want := range []string{"╭", "╮", "╰", "╯"} {
+			if !strings.Contains(l[sideSearchTop], want) && !strings.Contains(l[sideSearchRow+1], want) {
+				t.Fatalf("filtering=%v: field must be framed, missing %q:\n%s|%s",
+					filtering, want, l[sideSearchTop], l[sideSearchRow+1])
+			}
+		}
+		if w := lipgloss.Width(ansi.Cut(l[sideSearchTop], 1, m.sidebarW-1)); w != m.sidebarW-2 {
+			t.Fatalf("field frame width %d must match the sidebar interior %d", w, m.sidebarW-2)
+		}
+		if !strings.Contains(l[explorerFirstRow], "public") {
+			t.Fatalf("filtering=%v: tree must start on row %d:\n%s", filtering, explorerFirstRow, l[explorerFirstRow])
+		}
+	}
+	// A committed filter stays readable on the field, with its ×.
+	m.filtering = false
+	u, _ := m.Update(testKey("/"))
+	m = u.(Model)
+	for _, r := range "cust" {
+		u, _ = m.Update(testKey(string(r)))
+		m = u.(Model)
+	}
+	u, _ = m.Update(testKey("enter"))
+	m = u.(Model)
+	if row := lines()[sideSearchRow]; !strings.Contains(row, "cust") || !strings.Contains(row, "×") {
+		t.Fatalf("committed filter and its × must stay on screen: %q", row)
 	}
 }
 
