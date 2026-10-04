@@ -189,6 +189,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A restored session wins over "open the first table": the user
 		// left db-peek on that table, tab and filter last time.
 		if m.restoreFilter != "" {
+			// The search field is always on screen, so a restored filter
+			// has to live in the input as well as in the tree.
+			m.filterInput.SetValue(m.restoreFilter)
 			m.explorer.SetFilter(m.restoreFilter)
 		}
 		restoreTable, restoreTab := m.restoreTable, m.restoreTab
@@ -762,10 +765,7 @@ func (m Model) sidebarKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd)
 func (m Model) filterKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc":
-		m.filtering = false
-		m.filterInput.Blur()
-		m.filterInput.SetValue("")
-		m.explorer.SetFilter("")
+		m.clearFilter()
 		return m, nil
 	case "enter":
 		m.filtering = false
@@ -784,6 +784,15 @@ func (m Model) filterKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) 
 	m.filterInput, cmd = m.filterInput.Update(msg)
 	m.explorer.SetFilter(m.filterInput.Value())
 	return m, cmd
+}
+
+// clearFilter drops the applied sidebar filter and blurs the search
+// field. esc and the field's × affordance both land here.
+func (m *Model) clearFilter() {
+	m.filtering = false
+	m.filterInput.Blur()
+	m.filterInput.SetValue("")
+	m.explorer.SetFilter("")
 }
 
 // detailKey handles keys on the schema/indexes/rows/query/er tabs.
