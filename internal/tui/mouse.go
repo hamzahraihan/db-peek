@@ -71,17 +71,29 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 			if msg.X == 0 || msg.X == sideOuterW-1 || msg.Y == 1 || msg.Y == contentBottom {
 				return m, nil
 			}
-			// Conn row (y==3) × affordance: clicks on the far right
+			// Conn row × affordance: clicks on the far right
 			// (x >= sidebarW-2, i.e. x == sidebarW-2 interior) disconnect;
 			// elsewhere on the row is a no-op (but still focuses sidebar).
-			if msg.Y == 3 && msg.X >= m.sidebarW-2 {
+			if msg.Y == sideConnRow && msg.X >= m.sidebarW-2 {
 				m.disconnect()
 				return m, nil
+			}
+			// Search field: its three rows (frame + content) focus the
+			// input — the mouse twin of "/" — and the × cells clear an
+			// applied filter.
+			if msg.Y >= sideSearchTop && msg.Y <= sideSearchRow+1 {
+				if msg.X >= m.searchClearX() && m.explorer.Filter != "" {
+					m.clearFilter()
+					return m, nil
+				}
+				m.filtering = true
+				m.filterInput.SetValue(m.explorer.Filter)
+				return m, m.filterInput.Focus()
 			}
 			if msg.Y >= explorerFirstRow {
 				return m.clickExplorer(msg.X, msg.Y)
 			}
-			return m, nil // sidebar chrome (title/conn/separator): focus only
+			return m, nil // sidebar chrome (conn/divider): focus only
 		}
 		if inDetailOuter {
 			m.focusDetail = true
