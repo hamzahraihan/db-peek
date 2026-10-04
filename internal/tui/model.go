@@ -189,11 +189,27 @@ func New(connStr string, store *saved.Store) Model {
 	connInput.CharLimit = 512
 	connInput.SetWidth(80)
 
+	// The sidebar search field is always on screen, so it is dressed as
+	// a field (magnifier prompt) rather than a "/" shortcut, and its
+	// focused state uses the app's gold focus color. resizeBrowse sizes
+	// the value area to the sidebar interior.
 	filterInput := textinput.New()
-	filterInput.Prompt = "/"
+	filterInput.Prompt = "🔍 "
 	filterInput.Placeholder = "filter tables"
 	filterInput.CharLimit = 64
-	filterInput.SetWidth(32)
+	filterInput.SetStyles(textinput.Styles{
+		Focused: textinput.StyleState{
+			Prompt:      lipgloss.NewStyle().Foreground(lipgloss.Color("#EAB308")),
+			Text:        lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
+			Placeholder: dimStyle,
+		},
+		Blurred: textinput.StyleState{
+			Prompt:      dimStyle,
+			Text:        lipgloss.NewStyle().Foreground(lipgloss.Color("7")),
+			Placeholder: dimStyle,
+		},
+		Cursor: filterInput.Styles().Cursor,
+	})
 
 	customFilter := func(term string, targets []string) []list.Rank {
 		if re, err := regexp.Compile("(?i)" + term); err == nil {
