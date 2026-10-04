@@ -39,8 +39,8 @@ func TestRenderShowsWindowAndClampsPurely(t *testing.T) {
 	e.ensureVisible(10)
 	out := e.Render(32, 10)
 	lines := strings.Split(out, "\n")
-	if !strings.Contains(lines[2], "t19") {
-		t.Fatalf("first visible tree row must be t19, got %q", lines[2])
+	if !strings.Contains(lines[1], "t19") {
+		t.Fatalf("first visible tree row must be t19, got %q", lines[1])
 	}
 	if strings.Contains(out, "t00") {
 		t.Fatalf("t00 must be scrolled out:\n%s", out)
@@ -80,7 +80,7 @@ func TestSidebarScrollbarOverlay(t *testing.T) {
 	e := bigExplorer() // 31 rows
 	out := e.Render(32, 10)
 	lines := strings.Split(out, "\n")
-	if !strings.Contains(lines[2], "█") {
+	if !strings.Contains(lines[1], "█") {
 		t.Fatalf("top of overflow must show thumb on first tree line:\n%s", out)
 	}
 	n := 0
@@ -102,7 +102,7 @@ func TestSidebarScrollbarOverlay(t *testing.T) {
 
 func TestSidebarKeyboardScrollsViewport(t *testing.T) {
 	m := browseModel(t)
-	m.height = 12 // tree viewport = 12-3-2-4 = 3 rows; fixture has 5 rows
+	m.height = 14 // tree viewport = 14-3-2-5 = 4 rows; fixture has 5 rows
 	m.loading = false
 	down := testKey("j")
 	for i := 0; i < 4; i++ {
@@ -112,8 +112,8 @@ func TestSidebarKeyboardScrollsViewport(t *testing.T) {
 	if m.explorer.Cursor != 4 {
 		t.Fatalf("want cursor 4, got %d", m.explorer.Cursor)
 	}
-	if m.explorer.Offset != 2 { // 4-3+1
-		t.Fatalf("want offset 2, got %d", m.explorer.Offset)
+	if m.explorer.Offset != 1 { // 4-4+1
+		t.Fatalf("want offset 1, got %d", m.explorer.Offset)
 	}
 }
 
@@ -132,12 +132,12 @@ func TestSidebarWheelScrollsViewport(t *testing.T) {
 
 func TestSidebarClickUsesOffset(t *testing.T) {
 	m := browseModel(t)
-	m.height = 12 // tree viewport 3 rows; fixture rows 0..4
+	m.height = 13 // tree viewport 3 rows; fixture rows 0..4
 	m.loading = false
 	m.focusDetail = false
 	m.explorer.Offset = 2
-	// First visible tree row (y=5) is fixture row 2 (col id → previews orders).
-	u, _ := m.Update(testClick(2, 5))
+	// First visible tree row is fixture row 2 (col id → previews orders).
+	u, _ := m.Update(testClick(2, explorerFirstRow))
 	m = u.(Model)
 	if m.explorer.Cursor != 2 {
 		t.Fatalf("want cursor 2, got %d", m.explorer.Cursor)
@@ -152,10 +152,10 @@ func TestSidebarClickUsesOffset(t *testing.T) {
 
 func TestSidebarHoverUsesOffset(t *testing.T) {
 	m := browseModel(t)
-	m.height = 12
+	m.height = 13
 	m.loading = false
 	m.explorer.Offset = 2
-	u, _ := m.Update(testMotion(2, 6))
+	u, _ := m.Update(testMotion(2, explorerFirstRow+1))
 	m = u.(Model)
 	if m.explorer.Cursor != 3 {
 		t.Fatalf("want cursor 3, got %d", m.explorer.Cursor)
