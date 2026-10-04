@@ -60,10 +60,10 @@ func (m *Model) erLayoutFor(w, h int) ([]erTable, []dbpkg.ForeignKey, map[string
 	var pos map[string]erRect
 	if key.focused {
 		tables, links = erFocusedSubset(m.erCenter, m.erSchema.tables, m.erSchema.links)
-		pos = erFocusLayout(m.erCenter, tables, links)
+		pos = erFocusLayout(m.erCenter, tables, links, w, h)
 	} else {
 		tables, links = m.erSchema.tables, m.erSchema.links
-		pos = erGridLayout(tables, w, h)
+		pos = erGridLayout(tables, links, m.erCenter, w, h)
 	}
 	m.erMemo.posKey = key
 	m.erMemo.tables, m.erMemo.links, m.erMemo.pos = tables, links, pos
