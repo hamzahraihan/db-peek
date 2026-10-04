@@ -74,8 +74,9 @@ func (m Model) erVisibleTables() []erTable {
 // Each column stacks vertically and columns are vertically centered
 // against the tallest one so 1-hop connectors stay short and horizontal.
 // A table linked in both directions goes right (outgoing wins). Gap
-// gx=6 leaves room for `──▶` arrows, gy=2 separates stacked boxes.
-func erFocusLayout(center string, tables []erTable, links []dbpkg.ForeignKey) map[string]erRect {
+// gx=6 leaves room for `──▶` arrows, gy=2 separates stacked boxes. The
+// result is then centered in the w×h pane.
+func erFocusLayout(center string, tables []erTable, links []dbpkg.ForeignKey, w, h int) map[string]erRect {
 	byName := map[string]erTable{}
 	for _, t := range tables {
 		byName[t.name] = t
@@ -87,11 +88,12 @@ func erFocusLayout(center string, tables []erTable, links []dbpkg.ForeignKey) ma
 		pos := map[string]erRect{}
 		y := 0
 		for _, t := range cp {
-			w := erBoxWidth(t) + 2
-			h := erBoxHeight(t, len(tables)) + 2
-			pos[t.name] = erRect{x: 0, y: y, w: w, h: h}
-			y += h + 2
+			bw := erBoxWidth(t) + 2
+			bh := erBoxHeight(t, len(tables)) + 2
+			pos[t.name] = erRect{x: 0, y: y, w: bw, h: bh}
+			y += bh + 2
 		}
+		erCenterIn(pos, w, h)
 		return pos
 	}
 	outgoingSet := map[string]bool{}
@@ -120,7 +122,9 @@ func erFocusLayout(center string, tables []erTable, links []dbpkg.ForeignKey) ma
 	sort.Strings(incoming)
 	sort.Strings(outgoing)
 
-	const gx, gy = 6, 2
+	// gx leaves room for a relationship's cardinality label beside its
+	// marker; gy only separates stacked boxes.
+	const gx, gy = 12, 2
 	total := len(tables)
 	ws := map[string]int{}
 	hs := map[string]int{}
@@ -191,6 +195,7 @@ func erFocusLayout(center string, tables []erTable, links []dbpkg.ForeignKey) ma
 		pos[n] = erRect{x: rightX, y: y, w: ws[n], h: hs[n]}
 		y += hs[n] + gy
 	}
+	erCenterIn(pos, w, h)
 	return pos
 }
 
@@ -215,8 +220,7 @@ func erFocusBoxLinesEx(t erTable, total int, selected, hovered bool) []string {
 	}
 	var rows []string
 	for _, c := range cols {
-		tag := ""
-		tagStyled := ""
+		var tag string
 		left := "  " + c.Name
 		switch {
 		case t.pk[c.Name]:
@@ -226,20 +230,17 @@ func erFocusBoxLinesEx(t erTable, total int, selected, hovered bool) []string {
 		}
 		left = fitText(left, w-len(tag)-1)
 		gap := w - lipgloss.Width(left) - lipgloss.Width(tag)
-		if gap < 1 {
-			gap = 1
-		}
 		switch tag {
 		case "PK":
-			tagStyled = erPKTagStyle.Render(tag)
-			rows = append(rows, dataSelectedStyle.Render(left)+strings.Repeat(" ", gap)+tagStyled)
+			// Gold tag plus bold field name carries "primary key" here.
+			// The detail grid's selection band would read as a selected
+			// row inside a diagram box, where nothing is selectable.
+			rows = append(rows, erPKFieldStyle.Render(left)+strings.Repeat(" ", gap)+erPKTagStyle.Render(tag))
 		case "FK":
-			tagStyled = dimStyle.Render(tag)
-			rows = append(rows, left+strings.Repeat(" ", gap)+tagStyled)
+			rows = append(rows, left+strings.Repeat(" ", gap)+dimStyle.Render(tag))
 		default:
 			rows = append(rows, left)
 		}
-		_ = tagStyled
 	}
 	if more > 0 {
 		rows = append(rows, dimStyle.Render(fitText("… "+strconv.Itoa(more)+" more", w)))
