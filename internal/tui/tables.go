@@ -90,9 +90,10 @@ func (m Model) contentH() int {
 }
 
 // sidebarTreeH is the number of explorer tree rows visible in the
-// sidebar: inner box height minus title, conn, separator, footer.
+// sidebar: inner box height minus conn, the framed search field, and
+// the footer.
 func (m Model) sidebarTreeH() int {
-	h := m.contentH() - 2 - 4
+	h := m.contentH() - 2 - 5
 	if h < 1 {
 		h = 1
 	}
@@ -113,6 +114,10 @@ func (m *Model) resizeBrowse() {
 		w = 44
 	}
 	m.sidebarW = w
+	// The field's value area is whatever the frame and prompt leave, so
+	// the box spans the sidebar interior and the × lands in its last
+	// content cell (see searchClearX).
+	m.filterInput.SetWidth(max(4, w-2-searchPad+1-lipgloss.Width(m.filterInput.Prompt)))
 	m.explorer.ensureVisible(m.sidebarTreeH())
 	m.sizeTables()
 }
