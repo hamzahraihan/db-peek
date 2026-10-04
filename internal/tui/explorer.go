@@ -384,8 +384,10 @@ func (e *Explorer) Render(sidebarW, height int) string {
 		end = len(rows)
 	}
 	vis := rows[start:end]
+	// Only the connection header is chrome here: browseView stacks the
+	// divider and the search field under it, so the tree starts at the
+	// same terminal row as before.
 	var b strings.Builder
-	b.WriteString(explorerTitle.Render("explorer") + "\n")
 	connLeft := fitText("● "+e.ConnName, sidebarW-2)
 	gap := sidebarW - lipgloss.Width(connLeft) - 1
 	if gap < 1 {
