@@ -33,11 +33,12 @@ func TestERHitBox(t *testing.T) {
 		tables: []erTable{{name: "customers"}, {name: "orders"}},
 		links:  []dbpkg.ForeignKey{{FromTable: "orders", FromColumn: "customer_id", ToTable: "customers", ToColumn: "id"}},
 	})
-	m.width = 120
-	m.sidebarW = 34
-	name, ok := m.erHit(1, 6)
-	if !ok || (name != "customers" && name != "orders") {
-		t.Fatalf("want a box hit, got %q ok=%v", name, ok)
+	_, _, pos := m.erLayoutFor(m.paneInnerW(), m.paneInnerH())
+	for name, r := range pos {
+		got, ok := m.erHit(r.x+1, r.y+detailTableTop)
+		if !ok || got != name {
+			t.Fatalf("a click inside %q must hit that box, got %q ok=%v", name, got, ok)
+		}
 	}
 	if _, ok := m.erHit(119, 40); ok {
 		t.Fatal("gap click should miss")
@@ -58,7 +59,7 @@ func TestERCanvasBoxes(t *testing.T) {
 		{name: "customers", cols: []dbpkg.Column{{Name: "id", Type: "integer", Extra: "PK(1)"}, {Name: "name", Type: "text"}}, pk: map[string]bool{"id": true}},
 		{name: "orders", cols: []dbpkg.Column{{Name: "id", Type: "integer", Extra: "PK(1)"}, {Name: "customer_id", Type: "integer"}}, pk: map[string]bool{"id": true}, fk: map[string]bool{"customer_id": true}},
 	}
-	pos := erGridLayout(tables, 80, 20)
+	pos := erGridLayout(tables, nil, "orders", 80, 20)
 	if len(pos) != 2 {
 		t.Fatalf("want 2 boxes, got %v", pos)
 	}
@@ -78,7 +79,7 @@ func TestERCanvasConnectors(t *testing.T) {
 	links := []dbpkg.ForeignKey{{FromTable: "orders", FromColumn: "customer_id", ToTable: "customers", ToColumn: "id"}}
 	canvas := erRenderCanvas(tables, links, 80, 20, "orders")
 	joined := strings.Join(canvas, "\n")
-	if !strings.Contains(joined, "┄") && !strings.Contains(joined, "┆") {
+	if !strings.Contains(joined, "─") && !strings.Contains(joined, "│") {
 		t.Fatalf("missing connector chars in:\n%s", joined)
 	}
 	for _, want := range []string{"customers", "orders"} {
