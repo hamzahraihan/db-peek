@@ -51,10 +51,24 @@ func (m Model) fitHeader() string {
 // sideBoxTop is the terminal row of both pane top borders (just below header).
 const sideBoxTop = 1
 
-// explorerFirstRow is the terminal row of the first explorer tree row:
-// y0 header, y1 side top border, y2 title, y3 conn, y4 separator,
-// y5 first tree row.
-const explorerFirstRow = 5
+// Sidebar chrome rows, counted from the top of the terminal. The pane
+// border takes y1, then the connection row and the three-row search
+// field box, so the tree starts on explorerFirstRow.
+const (
+	sideConnRow   = 2
+	sideSearchTop = 3 // field box top border
+	sideSearchRow = 4 // field content row
+	// searchPad is the horizontal chrome outside the field's value area:
+	// two border cells, one space of padding per side, and the trailing
+	// cell the × affordance occupies.
+	searchPad = 5
+	explorerFirstRow = 6
+)
+
+// searchClearX is the terminal column of the field's × affordance: the
+// last content cell inside the field box, which sits one padding cell
+// and one border cell left of the pane's own border.
+func (m Model) searchClearX() int { return m.sidebarW - searchPad + 1 }
 
 // browseView renders the split layout: sidebar explorer tree (left) and
 // table detail (right), each wrapped in a rounded border. Boxes join with
@@ -73,13 +87,13 @@ func (m Model) browseView() string {
 		innerH = 1
 	}
 
+	// Sidebar chrome: the framed search field sits directly under the
+	// connection row, above the tree, so the first tree row still lands
+	// on explorerFirstRow and every mouse row below it is unaffected.
 	side := strings.Split(m.explorer.Render(innerW, m.sidebarTreeH()), "\n")
-	// Insert a dim separator after the conn line so the first tree row
-	// lands at explorerFirstRow: y0=app header, y1=border, y2=title,
-	// y3=conn, y4=separator, y5=first tree row.
-	if len(side) >= 2 {
-		sep := dimStyle.Render(fitText(strings.Repeat("─", innerW), innerW))
-		side = append(side[:2], append([]string{sep}, side[2:]...)...)
+	if len(side) >= 1 {
+		field := m.searchBox(innerW)
+		side = append(side[:1], append(field, side[1:]...)...)
 	}
 	// Sidebar footer/empty states (visual lines only, appended AFTER tree
 	// rows so explorerFirstRow hit-testing is unchanged and the cursor
@@ -97,18 +111,12 @@ func (m Model) browseView() string {
 			}
 		}
 	}
-	if m.filtering {
-		// Filter input replaces the schema footer (visual line only, after
-		// tree rows, so explorerFirstRow hit-testing is unchanged).
-		side = append(side, m.filterInput.View())
-	} else {
-		n := len(m.explorer.Schemas)
-		schemaFooter := "1 schema"
-		if n != 1 {
-			schemaFooter = fmt.Sprintf("%d schemas", n)
-		}
-		side = append(side, explorerTitle.Render(fitText(schemaFooter, innerW)))
+	n := len(m.explorer.Schemas)
+	schemaFooter := "1 schema"
+	if n != 1 {
+		schemaFooter = fmt.Sprintf("%d schemas", n)
 	}
+	side = append(side, explorerTitle.Render(fitText(schemaFooter, innerW)))
 	// Cap sidebar inner lines to innerW and pad/truncate to innerH.
 	for i, ln := range side {
 		if lipgloss.Width(ln) > innerW {
@@ -167,6 +175,33 @@ func (m Model) browseView() string {
 	}
 	b.WriteString(foot)
 	return b.String()
+}
+
+// searchBox renders the sidebar's table search field inside its own
+// border: top rule, field row, bottom rule. Always present, so the
+// filter is discoverable without pressing "/". The border follows the
+// pane rule — gold while the field has focus, dim otherwise — so
+// keystrokes visibly belong to the field. The value line is trimmed to
+// the inner width, so the box can never wrap and shift the tree below.
+func (m Model) searchBox(w int) []string {
+	inner := w - searchPad + 1
+	if inner < 1 {
+		inner = 1
+	}
+	line := m.filterInput.View()
+	if !m.filtering && m.explorer.Filter != "" {
+		line = setLastCell(line, dimStyle.Render("×"), inner)
+	}
+	border := lipgloss.Color("#3A3A3A")
+	if m.filtering {
+		border = lipgloss.Color("#EAB308")
+	}
+	return strings.Split(lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(border).
+		Padding(0, 1).
+		Width(w).
+		Render(ansi.Truncate(line, inner, "")), "\n")
 }
 
 // detailView renders the right pane: title, tabs, and grid (view_detail.go).
