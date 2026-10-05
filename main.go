@@ -47,6 +47,7 @@ func main() {
 		forgetF  = flag.String("forget", "", "delete saved connection NAME and exit")
 		connsF   = flag.Bool("conns", false, "list saved connections and exit")
 		versionF = flag.Bool("version", false, "print version and exit")
+		roF      = flag.Bool("read-only", false, "refuse writes and cell edits (SELECT/reads only)")
 	)
 	flag.Usage = func() {
 		fmt.Fprint(os.Stderr, `db-peek — peek at databases from the terminal
@@ -131,7 +132,7 @@ or a saved NAME. Env DATABASE_URL fills conn when no argument is given.
 
 	oneShot := *listF || *schemaF != "" || *rowsF != "" || *queryF != ""
 	if !oneShot {
-		if err := tui.Run(conn, store); err != nil {
+		if err := tui.Run(conn, store, *roF); err != nil {
 			fmt.Fprintln(os.Stderr, "db-peek:", err)
 			os.Exit(1)
 		}
@@ -225,6 +226,9 @@ or a saved NAME. Env DATABASE_URL fills conn when no argument is given.
 		}
 		render(s.Columns, s.Rows)
 	case *queryF != "":
+		if *roF && dbpkg.IsWriteStatement(*queryF) {
+			fatal(fmt.Errorf("read-only: writes blocked"))
+		}
 		s, n, err := db.RunUserQuery(ctx, *queryF)
 		if err != nil {
 			fatal(fmt.Errorf("%w%s", err, dbpkg.HintForError(conn, err)))
