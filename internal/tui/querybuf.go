@@ -50,6 +50,7 @@ func copyTable(in dataTable) dataTable {
 	}
 	out.colStyles = append([]lipgloss.Style(nil), in.colStyles...)
 	out.dimColStyles = append([]lipgloss.Style(nil), in.dimColStyles...)
+	out.baseRows = cloneRows(in.baseRows)
 	return out
 }
 
@@ -243,9 +244,9 @@ func (m Model) queryStripView(w int) string {
 			label := "[" + title + "]"
 			width += len([]rune(label)) + 1
 			if i == m.qcur {
-				parts = append(parts, activeTab.Render(label))
+				parts = append(parts, activeBuf.Render(label))
 			} else {
-				parts = append(parts, inactiveTab.Render(label))
+				parts = append(parts, dimStyle.Render(label))
 			}
 		}
 		if len(m.qbufs) < maxQueryBufs {
@@ -256,7 +257,12 @@ func (m Model) queryStripView(w int) string {
 	}
 	s, width := render(false)
 	if w > 0 && width > w {
-		s, _ = render(true)
+		s, width = render(true)
+		// Compact numbers hide the SQL titles, so mark the truncation
+		// inside the same budget instead of swapping silently.
+		if marker := dimStyle.Render("…"); width+lipgloss.Width(marker)+1 <= w {
+			s += " " + marker
+		}
 	}
 	return s
 }

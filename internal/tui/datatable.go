@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"sort"
+	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -37,6 +39,13 @@ type dataTable struct {
 	// dim reports whether the pane is unfocused (use muted roles).
 	styleCell func(col int, val string, dim bool) (lipgloss.Style, bool)
 	hasHeader bool // true once SetHeaderStyles has run; else globals apply
+	// Sorting: local view-only sort. sortCol -1 means unsorted.
+	sortCol int
+	sortDir int // 1 = asc, -1 = desc
+	// Filtering: local view-only find on loaded rows. baseRows is the
+	// full data from setData; rows is the visible filtered+sorted view.
+	baseRows [][]string
+	filter   string
 }
 
 // SetHeaderStyles overrides the header role for this table (e.g. field-name
@@ -64,7 +73,11 @@ const dataHeaderH = 2
 func (t *dataTable) setData(cols []string, rows [][]string) {
 	t.cols = cols
 	t.rows = rows
+	t.baseRows = cloneRows(rows)
+	t.filter = ""
 	t.widths = distributeWidths(t.width, len(cols))
+	t.sortCol = -1
+	t.sortDir = 0
 	if t.cursor > len(rows)-1 {
 		t.cursor = len(rows) - 1
 	}
@@ -84,6 +97,206 @@ func (t *dataTable) Resize(w, totalH int) {
 		t.height = 1
 	}
 	t.clampOffset()
+}
+
+// SortState reports the current sort for tests/status: "" when unsorted,
+// else "col:asc" or "col:desc".
+func (t *dataTable) SortState() string {
+	if t.sortCol < 0 || t.sortDir == 0 {
+		return ""
+	}
+	dir := "asc"
+	if t.sortDir < 0 {
+		dir = "desc"
+	}
+	return strconv.Itoa(t.sortCol) + ":" + dir
+}
+
+// SortedCol reports the sorted column, or -1 when unsorted.
+func (t *dataTable) SortedCol() int { return t.sortCol }
+
+// SortBy cycles the sort for col: unsorted -> asc -> desc -> unsorted.
+// Sorting is view-only and stable; clearing recomputes from baseRows so
+// the pre-sort (and filtered) order returns.
+func (t *dataTable) SortBy(col int) {
+	if col < 0 || col >= len(t.cols) || len(t.baseRows) == 0 {
+		return
+	}
+	if t.isPlaceholderBase() {
+		return
+	}
+	if t.sortCol != col {
+		t.sortCol, t.sortDir = col, 1
+		t.rebuildVisible()
+		return
+	}
+	if t.sortDir > 0 {
+		t.sortDir = -1
+		t.rebuildVisible()
+		return
+	}
+	// Third click clears.
+	t.sortCol, t.sortDir = -1, 0
+	t.rebuildVisible()
+}
+
+// ClearSort drops any sort and recomputes the visible rows.
+func (t *dataTable) ClearSort() {
+	t.sortCol, t.sortDir = -1, 0
+	t.rebuildVisible()
+}
+
+// SetFilter applies a case-insensitive substring find across all columns
+// of the loaded rows. NULL never matches. Empty text clears.
+func (t *dataTable) SetFilter(s string) {
+	t.filter = s
+	t.rebuildVisible()
+}
+
+// ClearFilter drops the find text and recomputes (keeping any sort).
+func (t *dataTable) ClearFilter() {
+	t.filter = ""
+	t.rebuildVisible()
+}
+
+// FilterText reports the active find text, "" when none.
+func (t *dataTable) FilterText() string { return t.filter }
+
+// rebuildVisible derives rows from baseRows: filter first, then stable
+// sort. Placeholder grids ("(no rows)") pass through untouched.
+func (t *dataTable) rebuildVisible() {
+	if t.isPlaceholderBase() {
+		t.rows = cloneRows(t.baseRows)
+		t.cursor = 0
+		t.offset = 0
+		t.hover = -1
+		return
+	}
+	needle := strings.ToLower(t.filter)
+	var out [][]string
+	if needle == "" {
+		out = cloneRows(t.baseRows)
+	} else {
+		for _, r := range t.baseRows {
+			matched := false
+			for _, c := range r {
+				if isNullCell(c) {
+					continue
+				}
+				if strings.Contains(strings.ToLower(c), needle) {
+					matched = true
+					break
+				}
+			}
+			if matched {
+				out = append(out, append([]string(nil), r...))
+			}
+		}
+		if len(out) == 0 {
+			out = [][]string{{"(no match)"}}
+		}
+	}
+	if t.sortCol >= 0 && t.sortDir != 0 && len(out) > 0 && !isPlaceholderRow(out) {
+		col, dir := t.sortCol, t.sortDir
+		sort.SliceStable(out, func(i, j int) bool {
+			a, b := cellAt(out[i], col), cellAt(out[j], col)
+			aNull, bNull := isNullCell(a), isNullCell(b)
+			if aNull && bNull {
+				return false
+			}
+			if aNull {
+				return false // nulls last in both directions
+			}
+			if bNull {
+				return true
+			}
+			c := compareValues(a, b)
+			if dir < 0 {
+				c = -c
+			}
+			return c < 0
+		})
+	}
+	t.rows = out
+	t.cursor = 0
+	t.offset = 0
+	t.hover = -1
+	t.clampOffset()
+}
+
+func (t *dataTable) isPlaceholderBase() bool { return isPlaceholderRow(t.baseRows) }
+
+func isPlaceholderRow(rows [][]string) bool {
+	if len(rows) != 1 || len(rows[0]) != 1 {
+		return false
+	}
+	return rows[0][0] == "(no rows)" || rows[0][0] == "(no match)"
+}
+
+func cellAt(row []string, col int) string {
+	if col < 0 || col >= len(row) {
+		return ""
+	}
+	return row[col]
+}
+
+func cloneRows(in [][]string) [][]string {
+	if in == nil {
+		return nil
+	}
+	out := make([][]string, len(in))
+	for i, r := range in {
+		out[i] = append([]string(nil), r...)
+	}
+	return out
+}
+
+func isNullCell(s string) bool {
+	return s == "" || s == "NULL" || s == "(no rows)" || s == "(no match)"
+}
+
+func compareCell(a, b string) int {
+	aNull, bNull := isNullCell(a), isNullCell(b)
+	if aNull && bNull {
+		return 0
+	}
+	if aNull {
+		return 1 // nulls last in asc order
+	}
+	if bNull {
+		return -1
+	}
+	return compareValues(a, b)
+}
+
+func compareValues(a, b string) int {
+	if af, err1 := strconv.ParseFloat(strings.TrimSpace(a), 64); err1 == nil {
+		if bf, err2 := strconv.ParseFloat(strings.TrimSpace(b), 64); err2 == nil {
+			switch {
+			case af < bf:
+				return -1
+			case af > bf:
+				return 1
+			default:
+				return 0
+			}
+		}
+	}
+	// Case-insensitive text compare; tie-break case-sensitive for stability.
+	al, bl := strings.ToLower(a), strings.ToLower(b)
+	if al < bl {
+		return -1
+	}
+	if al > bl {
+		return 1
+	}
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	return 0
 }
 
 // distributeWidths mirrors the old sizeTables policy: even split, last
@@ -232,7 +445,15 @@ func (t *dataTable) view(dim bool) string {
 	var b strings.Builder
 	cells := make([]string, len(t.cols))
 	for i, c := range t.cols {
-		padded := padCell(c, t.widths[i])
+		label := c
+		if i == t.sortCol && t.sortDir != 0 {
+			if t.sortDir > 0 {
+				label += " ▲"
+			} else {
+				label += " ▼"
+			}
+		}
+		padded := padCell(label, t.widths[i])
 		if i < len(colStyles) {
 			cells[i] = colStyles[i].Render(padded)
 		} else {

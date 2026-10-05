@@ -146,6 +146,7 @@ func TestDetailFootSingleLineFits(t *testing.T) {
 	}
 	m := queryTabModel()
 	m.tab = 3
+	m.queryFocus = 1
 	if got := m.detailFoot(); !strings.Contains(got, "H/L") || !strings.Contains(got, "buffer") {
 		t.Fatalf("query foot must name buffer keys, got %q", got)
 	}

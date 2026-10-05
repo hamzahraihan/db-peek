@@ -15,12 +15,14 @@ import (
 )
 
 // Run starts the fullscreen TUI. An empty connStr opens the saved
-// connection picker instead of connecting directly.
-func Run(connStr string, store *saved.Store) error {
+// connection picker instead of connecting directly. readOnly refuses
+// writes and cell edits with a status note.
+func Run(connStr string, store *saved.Store, readOnly bool) error {
 	if mouseDebug {
 		fmt.Fprintln(os.Stderr, "db-peek: mouse debug log →", mouseLogPath())
 	}
 	m := New(connStr, store)
+	m.readOnly = readOnly
 	p := tea.NewProgram(m)
 	final, err := p.Run()
 	// One hook covers every exit path (ctrl+c, q in browse, q in the

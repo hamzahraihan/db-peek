@@ -458,6 +458,15 @@ func (m Model) clickTable(x, y int, shift bool) (tea.Model, tea.Cmd) {
 	if m.tab == 2 {
 		top++ // pager line above the rows table
 	}
+	if rel := y - top; rel == 0 {
+		// Header title row: cycle sort for the clicked column.
+		if c := t.ColAt(x); c >= 0 {
+			t.SetCol(c)
+			t.SortBy(c)
+			logMouse("  clickTable y=%d -> sort col %d", y, c)
+		}
+		return m, nil
+	}
 	abs, ok := t.RowAt(y - top)
 	if !ok {
 		return m, nil
@@ -535,11 +544,24 @@ func (m Model) clickQuery(x, y int, shift bool) (tea.Model, tea.Cmd) {
 	}
 	abs, ok := m.queryTable.RowAt(y - queryResultsTop())
 	if !ok {
+		if rel := y - queryResultsTop(); rel == 0 {
+			// Results header row: cycle sort for the clicked column.
+			if c := m.queryTable.ColAt(x); c >= 0 {
+				m.queryTable.SetCol(c)
+				m.queryTable.SortBy(c)
+				m.queryFocus = 1
+				m.draggingEditor = false
+				logMouse("  clickQuery results y=%d -> sort col %d", y, c)
+			}
+		}
 		return m, nil
 	}
 	logMouse("  clickQuery results y=%d -> select %d", y, abs)
 	m.queryFocus = 1
 	m.queryTable.SetCursor(abs)
+	if c := m.queryTable.ColAt(x); c >= 0 {
+		m.queryTable.SetCol(c)
+	}
 	m.draggingEditor = false
 	return m, nil
 }

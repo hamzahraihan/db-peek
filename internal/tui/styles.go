@@ -14,6 +14,9 @@ var (
 	errStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
 	activeTab   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Background(lipgloss.Color("#005FD7")).Padding(0, 2)
 	inactiveTab = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Background(lipgloss.Color("236")).Padding(0, 2)
+	// Query buffer strip chips: deliberately NOT pills — the blue pill is
+	// reserved for detail tabs so the two stacked rows never compete.
+	activeBuf = lipgloss.NewStyle().Bold(true).Underline(true).Foreground(lipgloss.Color("#EAB308"))
 	hoverTab    = lipgloss.NewStyle().Underline(true).Bold(true).Foreground(lipgloss.Color("#00D7FF")).Background(lipgloss.Color("236")).Padding(0, 2)
 	// Line highlighter: the selected row anywhere (pickers, data tables).
 	selTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230")).Background(lipgloss.Color("62")).Padding(0, 1)
@@ -169,9 +172,11 @@ var (
 // renderKeyPairs builds a single-line "key desc • key desc" footer with
 // bright keys and muted labels. Pairs drop from the end until the line
 // fits w, so narrow terminals degrade gracefully instead of wrapping
-// (wrapping would desync row-exact mouse hit-testing).
+// (wrapping would desync row-exact mouse hit-testing). When pairs drop,
+// a dim overflow marker is appended inside the same budget so the
+// omission is visible instead of silent.
 func renderKeyPairs(pairs [][2]string, w int) string {
-	for n := len(pairs); n > 0; n-- {
+	build := func(n int) string {
 		var b strings.Builder
 		for i := 0; i < n; i++ {
 			if i > 0 {
@@ -181,9 +186,19 @@ func renderKeyPairs(pairs [][2]string, w int) string {
 			b.WriteString(" ")
 			b.WriteString(footDescStyle.Render(pairs[i][1]))
 		}
-		if w <= 0 || lipgloss.Width(b.String()) <= w {
-			return b.String()
+		return b.String()
+	}
+	for n := len(pairs); n > 0; n-- {
+		s := build(n)
+		if n < len(pairs) {
+			s += dimStyle.Render(" • …")
 		}
+		if w <= 0 || lipgloss.Width(s) <= w {
+			return s
+		}
+	}
+	if w > 0 && lipgloss.Width(dimStyle.Render("…")) <= w {
+		return dimStyle.Render("…")
 	}
 	return ""
 }

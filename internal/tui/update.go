@@ -122,6 +122,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.table = msg.table
 		m.cols = msg.cols
 		m.indexes = msg.indexes
+		m.tableDDL = msg.ddl
 		m.colsGen++
 		m.sample = msg.sample
 		m.count = msg.count
@@ -500,6 +501,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.draggingEditor = false
 		return m.handleKey(msg)
 
+	case tea.PasteMsg:
+		return m.handlePaste(msg)
+
+	case tea.PasteStartMsg, tea.PasteEndMsg:
+		return m, nil
+
 	case tea.MouseClickMsg:
 		return m.handleMouseClick(msg)
 	case tea.MouseWheelMsg:
@@ -536,6 +543,67 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.connInput, cmd = m.connInput.Update(msg)
 		}
 		return m, cmd
+	}
+	return m, nil
+}
+
+// handlePaste inserts bracketed-paste content into whichever input owns
+// the focus. Terminal paste arrives as tea.PasteMsg (not KeyPressMsg),
+// so without this the query editor silently drops every paste.
+func (m Model) handlePaste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
+	if msg.Content == "" {
+		return m, nil
+	}
+	switch m.screen {
+	case screenConns:
+		var cmd tea.Cmd
+		m.conns, cmd = m.conns.Update(msg)
+		return m, cmd
+	case screenForm:
+		var cmd tea.Cmd
+		if m.formFocus == 0 {
+			m.nameInput, cmd = m.nameInput.Update(msg)
+		} else {
+			m.connInput, cmd = m.connInput.Update(msg)
+		}
+		return m, cmd
+	case screenBrowse:
+		if m.filtering {
+			var cmd tea.Cmd
+			m.filterInput, cmd = m.filterInput.Update(msg)
+			m.explorer.SetFilter(m.filterInput.Value())
+			return m, cmd
+		}
+		if m.gridFiltering {
+			var cmd tea.Cmd
+			m.gridFilterInput, cmd = m.gridFilterInput.Update(msg)
+			if g := m.filterGrid(); g != nil {
+				g.SetFilter(m.gridFilterInput.Value())
+			}
+			return m, cmd
+		}
+		if m.sqlFiling {
+			var cmd tea.Cmd
+			m.sqlFileInput, cmd = m.sqlFileInput.Update(msg)
+			return m, cmd
+		}
+		if m.cellEditing {
+			var cmd tea.Cmd
+			m.cellInput, cmd = m.cellInput.Update(msg)
+			return m, cmd
+		}
+		if m.exporting {
+			var cmd tea.Cmd
+			m.exportInput, cmd = m.exportInput.Update(msg)
+			return m, cmd
+		}
+		if m.focusDetail && m.tab == 3 && m.queryFocus == 0 {
+			m.editor.InsertText(msg.Content)
+			m.clampEditorScroll()
+			m.refreshCompletionAfterEdit()
+			return m, nil
+		}
+		return m, nil
 	}
 	return m, nil
 }
@@ -579,9 +647,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case screenForm:
 		return m.formKey(msg, key)
 	case screenBrowse:
-		// q quits unless the sidebar filter is being typed into or the
+		// q quits unless a filter/find prompt is being typed into or the
 		// query editor has focus (there it inserts the rune).
-		if key == "q" && !m.filtering && m.explorer.Filter == "" && !(m.focusDetail && m.tab == 3 && m.queryFocus == 0) {
+		if key == "q" && !m.filtering && !m.gridFiltering && !m.sqlFiling && m.sqlConfirmPath == "" && m.explorer.Filter == "" && !(m.focusDetail && m.tab == 3 && m.queryFocus == 0) {
 			if m.db != nil {
 				_ = m.db.Close()
 			}
@@ -621,7 +689,7 @@ func (m Model) helpToggleAllowed() bool {
 	case screenForm:
 		return !m.nameInput.Focused() && !m.connInput.Focused()
 	case screenBrowse:
-		return !(m.focusDetail && m.tab == 3 && m.queryFocus == 0) && !m.filtering
+		return !(m.focusDetail && m.tab == 3 && m.queryFocus == 0) && !m.filtering && !m.gridFiltering && !m.sqlFiling
 	}
 	return true
 }
@@ -635,6 +703,8 @@ func (m *Model) clearConnState() {
 	m.cancelOp()
 	m.table = ""
 	m.cols = nil
+	m.tableDDL = ""
+	m.sqlConfirmPath = ""
 	m.colsGen++
 	m.explorerGen++
 	m.ccMemo = &completionMemo{}
@@ -828,6 +898,30 @@ func (m Model) detailKey(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 		m.exportInput, cmd = m.exportInput.Update(msg)
 		return m, cmd
 	}
+	// Pending open-file confirm owns every key until y/n/esc.
+	if m.sqlConfirmPath != "" {
+		switch key {
+		case "y", "Y":
+			path := m.sqlConfirmPath
+			m.sqlConfirmPath = ""
+			m.finishLoadBufferFromPath(path)
+			return m, nil
+		case "n", "N", "esc":
+			m.sqlConfirmPath = ""
+			m.status = "kept buffer"
+			return m, nil
+		}
+		return m, nil
+	}
+	// Grid find prompt is modal on the active grid: every key belongs to
+	// it until enter keeps the filter or esc clears it.
+	if m.gridFiltering {
+		return m.gridFilterKeys(msg, key)
+	}
+	// SQL file prompt is modal on the query tab for the same reason.
+	if m.sqlFiling {
+		return m.sqlFileKeys(msg, key)
+	}
 	if m.tab == 3 {
 		return m.queryKeys(msg, key)
 	}
@@ -890,16 +984,40 @@ func (m Model) detailKey(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 		m.startExport()
 		return m, nil
 	case ",":
-		m.rowTable.MoveColLeft()
+		m.activeGrid().MoveColLeft()
 		return m, nil
 	case ".":
-		m.rowTable.MoveColRight()
+		m.activeGrid().MoveColRight()
 		return m, nil
-	case "e":
-		// Only the rows tab has editable cells; elsewhere `e` is free.
-		if m.tab == 2 && m.startCellEdit() {
+	case "o", "O":
+		g := m.activeGrid()
+		g.SortBy(g.Col())
+		m.status = sortStatus(g)
+		return m, nil
+	case "/":
+		if !m.openGridFilter() {
 			return m, nil
 		}
+		return m, m.gridFilterInput.Focus()
+	case "e":
+		// Only the rows tab has editable cells; elsewhere `e` is free.
+		if m.tab == 2 {
+			if m.readOnly {
+				m.status = "read-only: cell edits blocked"
+				return m, nil
+			}
+			if m.startCellEdit() {
+				return m, nil
+			}
+		}
+		return m, nil
+	case "d", "D":
+		// Copy the table DDL (schema tab echo); empty when unavailable.
+		if strings.TrimSpace(m.tableDDL) == "" {
+			m.status = "no DDL for this table"
+			return m, nil
+		}
+		m.status = m.copySelectionText(m.tableDDL)
 		return m, nil
 	}
 	// Grid movement only applies to tabs 0-2 (tabs 3/4 route above).
@@ -941,13 +1059,46 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 		case "ctrl+n":
 			m.historyNext()
 			return m, nil
+		case "ctrl+v", "shift+insert", "ctrl+shift+v":
+			// Clipboard fallback for terminals without bracketed paste.
+			// Bracketed paste arrives as tea.PasteMsg (handlePaste).
+			txt, err := clipboardReadAll()
+			if err != nil {
+				m.status = "paste failed: " + err.Error()
+				return m, nil
+			}
+			if txt == "" {
+				return m, nil
+			}
+			m.editor.InsertText(txt)
+			m.clampEditorScroll()
+			m.refreshCompletionAfterEdit()
+			return m, nil
+		case "ctrl+o":
+			m.openSQLFile()
+			if m.sqlFiling {
+				return m, m.sqlFileInput.Focus()
+			}
+			return m, nil
+		case "f2":
+			m.saveSQLFile()
+			if m.sqlFiling {
+				return m, m.sqlFileInput.Focus()
+			}
+			return m, nil
 		case "ctrl+e":
 			m.pendingExplain, m.pendingAnalyze = true, false
+			if m.readOnlyBlocks() {
+				return m, nil
+			}
 			m.startQueryRun()
 			cmd := m.runQuery()
 			return m, cmd
 		case "ctrl+y":
 			m.pendingExplain, m.pendingAnalyze = true, true
+			if m.readOnlyBlocks() {
+				return m, nil
+			}
 			m.startQueryRun()
 			cmd := m.runQuery()
 			return m, cmd
@@ -1025,6 +1176,9 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 				m.showComplete = false
 				m.completeItems = nil
 				m.completeIdx = 0
+				if m.readOnlyBlocks() {
+					return m, nil
+				}
 				m.startQueryRun()
 				cmd := m.runQuery()
 				return m, cmd
@@ -1105,6 +1259,9 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 			m.refreshCompletionAfterEdit()
 			return m, nil
 		case "ctrl+r", "f5":
+			if m.readOnlyBlocks() {
+				return m, nil
+			}
 			m.startQueryRun()
 			cmd := m.runQuery()
 			return m, cmd
@@ -1177,7 +1334,16 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 		if msg.Text != "" {
 			m.editor.ClearSelection()
 			for _, r := range msg.Text {
-				m.editor.Insert(r)
+				switch r {
+				case '\r':
+					continue
+				case '\n':
+					m.editor.Newline()
+				case '\x00':
+					continue
+				default:
+					m.editor.Insert(r)
+				}
 			}
 			m.clampEditorScroll()
 			m.refreshCompletionAfterEdit()
@@ -1213,6 +1379,9 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 		cmd := m.setTab(4)
 		return m, cmd
 	case "ctrl+r", "f5", "r":
+		if m.readOnlyBlocks() {
+			return m, nil
+		}
 		m.startQueryRun()
 		cmd := m.runQuery()
 		return m, cmd
@@ -1243,6 +1412,33 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 	case "E":
 		m.startExport()
 		return m, nil
+	case ",":
+		m.queryTable.MoveColLeft()
+		return m, nil
+	case ".":
+		m.queryTable.MoveColRight()
+		return m, nil
+	case "o", "O":
+		m.queryTable.SortBy(m.queryTable.Col())
+		m.status = sortStatus(&m.queryTable)
+		return m, nil
+	case "ctrl+o":
+		m.openSQLFile()
+		if m.sqlFiling {
+			return m, m.sqlFileInput.Focus()
+		}
+		return m, nil
+	case "f2":
+		m.saveSQLFile()
+		if m.sqlFiling {
+			return m, m.sqlFileInput.Focus()
+		}
+		return m, nil
+	case "/":
+		if !m.openGridFilter() {
+			return m, nil
+		}
+		return m, m.gridFilterInput.Focus()
 	}
 	g := &m.queryTable
 	switch key {
@@ -1409,6 +1605,112 @@ func (m *Model) activeGrid() *dataTable {
 	}
 }
 
+// filterGrid returns the grid a find prompt applies to, or nil when the
+// current focus owns the keystroke (query editor, ER, modals).
+func (m *Model) filterGrid() *dataTable {
+	if m.tab < 3 {
+		return m.activeGrid()
+	}
+	if m.tab == 3 && m.queryFocus == 1 {
+		return &m.queryTable
+	}
+	return nil
+}
+
+// readOnlyBlocks reports whether the pending run is a write refused in
+// read-only mode, clearing any armed explain flags. Call sites check this
+// before startQueryRun so a blocked run never shows loading.
+func (m *Model) readOnlyBlocks() bool {
+	if !m.readOnly {
+		return false
+	}
+	if dbpkg.IsWriteStatement(m.editor.RunSQL()) {
+		m.pendingExplain, m.pendingAnalyze = false, false
+		m.status = "read-only: writes blocked"
+		return true
+	}
+	return false
+}
+
+// sortStatus labels a sort result as page-local so large paged tables
+// never read as globally sorted.
+func sortStatus(g *dataTable) string {
+	if g == nil || len(g.cols) == 0 {
+		return ""
+	}
+	st := g.SortState()
+	if st == "" {
+		return "sort cleared"
+	}
+	name := ""
+	if c := g.SortedCol(); c >= 0 && c < len(g.cols) {
+		name = g.cols[c]
+	}
+	dir := "asc"
+	if len(st) >= 4 && st[len(st)-4:] == "desc" {
+		dir = "desc"
+	}
+	if name != "" {
+		return "sorted page by " + name + " " + dir
+	}
+	return "sorted page " + dir
+}
+
+// openGridFilter arms the find prompt on the active grid, seeding it with
+// the grid's current filter. It reports whether a grid was available.
+func (m *Model) openGridFilter() bool {
+	g := m.filterGrid()
+	if g == nil {
+		return false
+	}
+	m.gridFiltering = true
+	m.gridFilterInput.SetValue(g.FilterText())
+	return true
+}
+
+// gridFilterKeys routes keystrokes while the find prompt is open: esc
+// clears and closes, enter keeps and closes, everything else filters live.
+func (m Model) gridFilterKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
+	g := m.filterGrid()
+	if g == nil {
+		m.gridFiltering = false
+		m.gridFilterInput.Blur()
+		return m, nil
+	}
+	switch key {
+	case "esc":
+		g.ClearFilter()
+		m.gridFiltering = false
+		m.gridFilterInput.Blur()
+		m.gridFilterInput.SetValue("")
+		return m, nil
+	case "enter":
+		m.gridFiltering = false
+		m.gridFilterInput.Blur()
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.gridFilterInput, cmd = m.gridFilterInput.Update(msg)
+	g.SetFilter(m.gridFilterInput.Value())
+	return m, cmd
+}
+
+// sqlFileKeys routes keystrokes while the SQL file prompt is open: esc
+// abandons, enter confirms the armed open or save.
+func (m Model) sqlFileKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		m.stopSQLFile()
+		return m, nil
+	case "enter":
+		m.confirmSQLFile()
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.sqlFileInput, cmd = m.sqlFileInput.Update(msg)
+	return m, cmd
+}
+
 // activateConn connects to a saved profile; shared by enter-key and double-click.
 func (m Model) activateConn(name string) (Model, tea.Cmd) {
 	if m.db != nil {
@@ -1477,6 +1779,8 @@ func (m Model) recenterER(name string) (Model, tea.Cmd) {
 func (m Model) inspectTable(schema, name string) (Model, tea.Cmd) {
 	m.filtering = false
 	m.filterInput.Blur()
+	m.gridFiltering = false
+	m.gridFilterInput.Blur()
 	m.table = name
 	m.tab = 0
 	m.loading = true
@@ -1492,6 +1796,8 @@ func (m Model) inspectTable(schema, name string) (Model, tea.Cmd) {
 func (m Model) inspectTableCtx(ctx context.Context, schema, name string) (Model, tea.Cmd) {
 	m.filtering = false
 	m.filterInput.Blur()
+	m.gridFiltering = false
+	m.gridFilterInput.Blur()
 	m.table = name
 	m.tab = 0
 	m.loading = true

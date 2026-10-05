@@ -60,6 +60,8 @@ func (m *Model) buildTables() {
 }
 
 // buildRowTable rebuilds only the rows tab so paging keeps schema/index cursors.
+// A find filter and page sort persist across pages: the new page is
+// filtered/sorted the same way instead of silently clearing.
 func (m *Model) buildRowTable() {
 	var rowCols []string
 	var rowRows [][]string
@@ -73,7 +75,17 @@ func (m *Model) buildRowTable() {
 		rowCols = []string{"rows"}
 		rowRows = [][]string{{"(no rows)"}}
 	}
+	filter, sortCol, sortDir := m.rowTable.filter, m.rowTable.sortCol, m.rowTable.sortDir
 	m.rowTable.setData(rowCols, rowRows)
+	if filter != "" {
+		m.rowTable.filter = filter
+	}
+	if sortCol >= 0 && sortDir != 0 {
+		m.rowTable.sortCol, m.rowTable.sortDir = sortCol, sortDir
+	}
+	if filter != "" || (sortCol >= 0 && sortDir != 0) {
+		m.rowTable.rebuildVisible()
+	}
 	// Header cells are field names: render them in the field role so they
 	// read as fields, distinct from the blue generic headers elsewhere.
 	m.rowTable.SetHeaderStyles(dataFieldHeaderStyle, dimFieldHeaderStyle)
@@ -151,6 +163,10 @@ func (m *Model) sizeTables() {
 	w := m.paneInnerW()
 	// Detail column: title, blank, tabs, blank, then the grid.
 	chrome := 4
+	if m.tab == 0 && strings.TrimSpace(m.tableDDL) != "" {
+		chrome++ // DDL echo row on the schema tab, reserved whenever DDL
+		// exists so cursor moves never change the layout height
+	}
 	if m.tab == 2 {
 		chrome++ // pager line on the rows tab
 	}

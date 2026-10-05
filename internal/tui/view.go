@@ -40,7 +40,10 @@ func (m Model) viewString() string {
 // fitHeader renders "db-peek <status>" truncated to the terminal width.
 // The header must stay one row: wrapping would shift every mouse row below.
 func (m Model) fitHeader() string {
-	const title = "db-peek "
+	title := "db-peek "
+	if m.readOnly {
+		title = "db-peek [read-only] "
+	}
 	status := m.status
 	if m.width > 0 {
 		status = fitText(status, m.width-lipgloss.Width(title))

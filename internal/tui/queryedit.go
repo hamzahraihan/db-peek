@@ -32,6 +32,236 @@ func (e *Editor) Insert(r rune) {
 	e.CurCol++
 }
 
+// RunSQL chooses the SQL to execute: the active selection wins, else
+// the semicolon-delimited statement under the cursor, else the buffer.
+// Statement splitting skips quoted semicolons and comments; $-quoting
+// is out of scope and splits conservatively.
+func (e *Editor) RunSQL() string {
+	if s := e.SelectionText(); strings.TrimSpace(s) != "" {
+		return s
+	}
+	if s := statementAtCursor(e.Text(), e.CurLine, e.CurCol); strings.TrimSpace(s) != "" {
+		return s
+	}
+	return e.Text()
+}
+
+// stmtSpan is one raw statement body with rune offsets into the source.
+type stmtSpan struct {
+	body       string
+	start, end int
+}
+
+func splitStatements(src string) []stmtSpan {
+	rs := []rune(src)
+	var out []stmtSpan
+	start, i := 0, 0
+	inSingle, inDouble := false, false
+	inLine, inBlock := false, false
+	bodyOf := func(end int) {
+		out = append(out, stmtSpan{body: string(rs[start:end]), start: start, end: end})
+	}
+	for i < len(rs) {
+		c := rs[i]
+		var next rune
+		if i+1 < len(rs) {
+			next = rs[i+1]
+		}
+		switch {
+		case inLine:
+			if c == '\n' {
+				inLine = false
+			}
+		case inBlock:
+			if c == '*' && next == '/' {
+				inBlock = false
+				i++
+			}
+		case inSingle:
+			if c == '\'' {
+				if next == '\'' {
+					i++
+				} else {
+					inSingle = false
+				}
+			}
+		case inDouble:
+			if c == '"' {
+				if next == '"' {
+					i++
+				} else {
+					inDouble = false
+				}
+			}
+		case c == '-' && next == '-':
+			inLine = true
+			i++
+		case c == '/' && next == '*':
+			inBlock = true
+			i++
+		case c == '\'':
+			inSingle = true
+		case c == '"':
+			inDouble = true
+		case c == ';':
+			bodyOf(i)
+			start = i + 1
+		}
+		i++
+	}
+	bodyOf(len(rs))
+	return out
+}
+
+func statementAtCursor(text string, line, col int) string {
+	rs := []rune(text)
+	lines := strings.Split(text, "\n")
+	if line < 0 {
+		line = 0
+	}
+	if line >= len(lines) {
+		line = len(lines) - 1
+	}
+	off := 0
+	for i := 0; i < line && i < len(lines); i++ {
+		off += len([]rune(lines[i])) + 1
+	}
+	lrs := []rune(lines[line])
+	if col < 0 {
+		col = 0
+	}
+	if col > len(lrs) {
+		col = len(lrs)
+	}
+	off += col
+	_ = rs
+	var prev string
+	for _, sp := range splitStatements(text) {
+		body := strings.TrimSpace(sp.body)
+		if body == "" {
+			continue
+		}
+		if sp.start <= off && off < sp.end {
+			return body
+		}
+		if sp.end <= off {
+			prev = body
+			continue
+		}
+		if prev != "" {
+			return prev
+		}
+		return body
+	}
+	return prev
+}
+
+// deleteSelection removes the current selection (line-wise or
+// character-precise) and parks the cursor at its start. It reports
+// whether a selection was active.
+func (e *Editor) deleteSelection() bool {
+	alo, aco, chi, cco, active := e.SelectionSpan()
+	if !active {
+		return false
+	}
+	if len(e.Lines) == 0 {
+		e.Lines = []string{""}
+	}
+	if alo < 0 {
+		alo = 0
+	}
+	if chi >= len(e.Lines) {
+		chi = len(e.Lines) - 1
+	}
+	if alo < 0 || chi < 0 || alo >= len(e.Lines) || chi >= len(e.Lines) {
+		e.selActive = false
+		return true
+	}
+	ars := []rune(e.Lines[alo])
+	crs := []rune(e.Lines[chi])
+	if aco < 0 {
+		aco = 0
+	}
+	if cco < 0 {
+		cco = 0
+	}
+	if aco > len(ars) {
+		aco = len(ars)
+	}
+	if cco > len(crs) {
+		cco = len(crs)
+	}
+	if alo == chi {
+		e.Lines[alo] = string(ars[:aco]) + string(ars[cco:])
+		e.CurLine, e.CurCol = alo, aco
+	} else {
+		head := string(ars[:aco])
+		tail := string(crs[cco:])
+		out := make([]string, 0, len(e.Lines)-(chi-alo))
+		out = append(out, e.Lines[:alo]...)
+		out = append(out, head+tail)
+		out = append(out, e.Lines[chi+1:]...)
+		if len(out) == 0 {
+			out = []string{""}
+		}
+		e.Lines = out
+		e.CurLine = alo
+		e.CurCol = len([]rune(head))
+	}
+	e.selActive = false
+	return true
+}
+
+// InsertText pastes s at the cursor, replacing any selection. It
+// normalizes Windows (\r\n) and old-Mac (\r) line endings, strips NUL
+// bytes (fatal to the Windows clipboard API), and splits multi-line
+// input into new editor rows like Newline does.
+func (e *Editor) InsertText(s string) {
+	if len(e.Lines) == 0 {
+		e.Lines = []string{""}
+	}
+	if e.CurLine < 0 {
+		e.CurLine = 0
+	}
+	if e.CurLine >= len(e.Lines) {
+		e.CurLine = len(e.Lines) - 1
+	}
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	s = strings.ReplaceAll(s, "\x00", "")
+	e.deleteSelection()
+	if s == "" {
+		return
+	}
+	rs := []rune(e.Lines[e.CurLine])
+	if e.CurCol < 0 {
+		e.CurCol = 0
+	}
+	if e.CurCol > len(rs) {
+		e.CurCol = len(rs)
+	}
+	parts := strings.Split(s, "\n")
+	if len(parts) == 1 {
+		pr := []rune(parts[0])
+		e.Lines[e.CurLine] = string(rs[:e.CurCol]) + parts[0] + string(rs[e.CurCol:])
+		e.CurCol += len(pr)
+		return
+	}
+	head := string(rs[:e.CurCol])
+	tail := string(rs[e.CurCol:])
+	out := make([]string, 0, len(e.Lines)+len(parts)-1)
+	out = append(out, e.Lines[:e.CurLine]...)
+	out = append(out, head+parts[0])
+	if len(parts) > 2 {
+		out = append(out, parts[1:len(parts)-1]...)
+	}
+	out = append(out, parts[len(parts)-1]+tail)
+	out = append(out, e.Lines[e.CurLine+1:]...)
+	e.Lines = out
+	e.CurLine = e.CurLine + len(parts) - 1
+	e.CurCol = len([]rune(parts[len(parts)-1]))
+}
+
 func (e *Editor) Backspace() {
 	rs := e.runes()
 	if e.CurCol > 0 {

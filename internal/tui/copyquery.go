@@ -21,6 +21,9 @@ import (
 // clipboardWriteAll is a seam for tests.
 var clipboardWriteAll = clipboard.WriteAll
 
+// clipboardReadAll is a seam for tests (ctrl+v paste fallback).
+var clipboardReadAll = clipboard.ReadAll
+
 // userCacheDir is a seam for tests; the dump file follows the platform
 // cache dir so the text never lands in the working directory.
 var userCacheDir = os.UserCacheDir

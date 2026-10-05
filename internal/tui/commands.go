@@ -101,11 +101,20 @@ func (m *Model) loadDetailCtx(ctx context.Context, schema, table string) tea.Cmd
 		if err != nil {
 			return detailLoadedMsg{table: table, schema: schema, err: err, seq: seq, conn: conn}
 		}
+		// Table DDL is best-effort decoration: a failure leaves the echo
+		// row empty but never fails the detail load.
+		var ddl string
+		if db.Driver == dbpkg.Postgres {
+			ddl = dbpkg.AssembleTableDDL(q, cols, idx)
+		} else if d, derr := db.TableDDL(ctx, q); derr == nil {
+			ddl = d
+		}
 		return detailLoadedMsg{
 			table:   table,
 			schema:  schema,
 			cols:    cols,
 			indexes: idx,
+			ddl:     ddl,
 			sample:  sample,
 			count:   -1,
 			seq:     seq,
@@ -207,8 +216,12 @@ func (m *Model) loadCounts(ctx context.Context, schema string, tables []string) 
 }
 
 func (m *Model) runQuery() tea.Cmd {
+	return m.runQueryWith(m.editor.RunSQL())
+}
+
+func (m *Model) runQueryWith(sql string) tea.Cmd {
 	m.ensureQueryBufs()
-	db, sql, seq := m.db, m.editor.Text(), m.qbufs[m.qcur].seq
+	db, seq := m.db, m.qbufs[m.qcur].seq
 	qid := m.qbufs[m.qcur].id
 	conn := m.connSeq
 	// ctrl+e/ctrl+y explain the buffer instead of running it. The buffer

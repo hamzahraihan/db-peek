@@ -58,6 +58,8 @@ func testKey(name string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift}
 	case "f5":
 		return tea.KeyPressMsg{Code: tea.KeyF5}
+	case "f2":
+		return tea.KeyPressMsg{Code: tea.KeyF2}
 	}
 	if strings.HasPrefix(name, "ctrl+") && len(name) == len("ctrl+")+1 {
 		return tea.KeyPressMsg{Code: rune(name[len("ctrl+")]), Mod: tea.ModCtrl}

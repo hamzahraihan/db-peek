@@ -49,10 +49,18 @@ type Model struct {
 	explorer    Explorer
 	filterInput textinput.Model
 	filtering   bool // sidebar filter input focused; keystrokes belong to it
+	gridFilterInput textinput.Model
+	gridFiltering   bool // grid find prompt open; keystrokes belong to it
+	sqlFileInput textinput.Model
+	sqlFiling    bool   // SQL file prompt open (open/save .sql)
+	sqlFileMode  string // "open" or "save" while sqlFiling
+	lastSQLPath  string // prefill for the next open/save prompt
+	sqlConfirmPath string // pending open path awaiting y/n on a dirty buffer
 	focusDetail bool // browse split: sidebar list vs detail pane
 	sidebarW    int  // sidebar width in cells, set on resize
 	tab         int  // 0 schema, 1 indexes, 2 rows
 	table       string
+	tableDDL    string // CREATE TABLE for the open table ("", when unavailable)
 	cols        []dbpkg.Column
 	indexes     []dbpkg.Index
 	sample      *dbpkg.Sample
@@ -117,6 +125,7 @@ type Model struct {
 	// editor buffer is never rewritten with an EXPLAIN prefix.
 	pendingExplain bool
 	pendingAnalyze bool
+	readOnly bool // --read-only: refuse writes and cell edits with status
 	// Cell editing (rows tab): `e` edits the cursor's cell in place.
 	// Named cellEditing because Model.editing is the saved-profile editor.
 	cellEditing bool
@@ -211,6 +220,18 @@ func New(connStr string, store *saved.Store) Model {
 		Cursor: filterInput.Styles().Cursor,
 	})
 
+	gridFilterInput := textinput.New()
+	gridFilterInput.Prompt = "/"
+	gridFilterInput.Placeholder = "filter rows"
+	gridFilterInput.CharLimit = 64
+	gridFilterInput.SetWidth(40)
+
+	sqlFileInput := textinput.New()
+	sqlFileInput.Prompt = "file → "
+	sqlFileInput.Placeholder = "path/to/file.sql"
+	sqlFileInput.CharLimit = 256
+	sqlFileInput.SetWidth(60)
+
 	customFilter := func(term string, targets []string) []list.Rank {
 		if re, err := regexp.Compile("(?i)" + term); err == nil {
 			var ranks []list.Rank
@@ -247,6 +268,8 @@ func New(connStr string, store *saved.Store) Model {
 		connStr: strings.TrimSpace(connStr), store: store,
 		conns: cl, explorer: NewExplorer("", []string{}), count: -1, pageSize: 10, hoverTab: -1,
 		nameInput: nameInput, connInput: connInput, filterInput: filterInput,
+		gridFilterInput: gridFilterInput,
+		sqlFileInput: sqlFileInput,
 		connsItemH: cdelegate.Height() + cdelegate.Spacing(),
 		editor:     NewEditor(),
 		erFocus:    true, queryAffected: -1,

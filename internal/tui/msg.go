@@ -10,6 +10,7 @@ type (
 		schema  string // explorer schema of the table; "" when not explorer-driven
 		cols    []dbpkg.Column
 		indexes []dbpkg.Index
+		ddl     string // CREATE TABLE echo for the schema tab, "" when unavailable
 		sample  *dbpkg.Sample
 		count   int64
 		seq     int // detailSeq at request time; stale replies are dropped
