@@ -73,7 +73,14 @@ func stripLeadingComments(q string) string {
 // affected) rather than Query (result grid). Row-returning leading
 // keywords stay on the query path.
 func isWriteStatement(sql string) bool {
-	s := stripLeadingComments(sql)
+	return IsWriteStatement(sql)
+}
+
+// IsWriteStatement reports whether sql would modify data or schema
+// (INSERT/UPDATE/DELETE/DDL). SELECT/WITH/VALUES/TABLE/EXPLAIN and
+// ... RETURNING statements read and report false. Callers gate
+// read-only mode on this.
+func IsWriteStatement(sql string) bool {	s := stripLeadingComments(sql)
 	if s == "" {
 		return false
 	}
