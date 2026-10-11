@@ -6,6 +6,7 @@
 package export
 
 import (
+	"bufio"
 	"encoding/base64"
 	"encoding/csv"
 	"encoding/json"
@@ -24,6 +25,7 @@ const (
 	FormatTSV  Format = "tsv"
 	FormatJSON Format = "json"
 	FormatMD   Format = "md"
+	FormatSQL  Format = "sql"
 )
 
 // FormatFromExt maps a file path to a format. The extension is matched
@@ -38,8 +40,10 @@ func FormatFromExt(path string) (Format, error) {
 		return FormatJSON, nil
 	case "md", "markdown":
 		return FormatMD, nil
+	case "sql":
+		return FormatSQL, nil
 	}
-	return "", fmt.Errorf("cannot export to %q: want .csv, .tsv, .json or .md", filepath.Ext(path))
+	return "", fmt.Errorf("cannot export to %q: want .csv, .tsv, .json, .md or .sql", filepath.Ext(path))
 }
 
 // Write emits cols and raw in the receiver's format and returns the
@@ -55,6 +59,8 @@ func (f Format) Write(w io.Writer, cols []string, raw [][]any) (int, error) {
 		return f.writeJSON(w, cols, raw)
 	case FormatMD:
 		return f.writeMarkdown(w, cols, raw)
+	case FormatSQL:
+		return f.writeSQL(w, cols, raw)
 	}
 	return 0, fmt.Errorf("unknown export format %q", f)
 }
@@ -183,4 +189,61 @@ func escapeMD(cells []string) []string {
 		out[i] = strings.ReplaceAll(c, "|", `\|`)
 	}
 	return out
+}
+func (f Format) writeSQL(w io.Writer, cols []string, raw [][]any) (int, error) {
+	if len(cols) == 0 || len(raw) == 0 {
+		return 0, nil
+	}
+	tableName := "records"
+	var colList strings.Builder
+	for i, c := range cols {
+		if i > 0 {
+			colList.WriteString(", ")
+		}
+		colList.WriteString("\"" + strings.ReplaceAll(c, "\"", "\"\"") + "\"")
+	}
+
+	bw := bufio.NewWriter(w)
+	for _, row := range raw {
+		var valList strings.Builder
+		for i := range cols {
+			if i > 0 {
+				valList.WriteString(", ")
+			}
+			v := cell(row, i)
+			valList.WriteString(sqlLiteral(v))
+		}
+		if _, err := fmt.Fprintf(bw, "INSERT INTO %s (%s) VALUES (%s);\n", tableName, colList.String(), valList.String()); err != nil {
+			return 0, err
+		}
+	}
+	if err := bw.Flush(); err != nil {
+		return 0, err
+	}
+	return len(raw), nil
+}
+
+func sqlLiteral(v any) string {
+	if v == nil {
+		return "NULL"
+	}
+	switch val := v.(type) {
+	case bool:
+		if val {
+			return "TRUE"
+		}
+		return "FALSE"
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return fmt.Sprintf("%d", val)
+	case float32, float64:
+		return fmt.Sprintf("%v", val)
+	case []byte:
+		if isText(val) {
+			return "'" + strings.ReplaceAll(string(val), "'", "''") + "'"
+		}
+		return fmt.Sprintf("X'%X'", val)
+	default:
+		s := fmt.Sprintf("%v", val)
+		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+	}
 }
