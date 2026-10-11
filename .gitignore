@@ -3,3 +3,4 @@
 *.db-journal
 *.sqlite
 *.sqlite3
+.impeccable/
