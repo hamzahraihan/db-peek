@@ -652,6 +652,35 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.historyModal {
+		switch key {
+		case "esc":
+			m.historyModal = false
+			return m, nil
+		case "enter":
+			m.selectHistoryEntry()
+			return m, nil
+		case "up", "ctrl+p":
+			if m.historyCursor > 0 {
+				m.historyCursor--
+				m.clampHistoryOffset()
+			}
+			return m, nil
+		case "down", "ctrl+n":
+			if m.historyCursor < len(m.historyFiltered)-1 {
+				m.historyCursor++
+				m.clampHistoryOffset()
+			}
+			return m, nil
+		case "ctrl+c":
+			m.historyModal = false
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.historyFilterInput, cmd = m.historyFilterInput.Update(msg)
+		m.rebuildHistoryFiltered()
+		return m, cmd
+	}
 	// ? opens the overlay, except where ? is text: conns filter input,
 	// form inputs, or the query editor (tab==3, editor focused) where
 	// Postgres JSON operators need the rune.
@@ -1034,6 +1063,15 @@ func (m Model) detailKey(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 		if m.openCellModal() {
 			return m, nil
 		}
+	case "y":
+		m.status = m.copyCellText()
+		return m, nil
+	case "Y":
+		m.status = m.copyRowText()
+		return m, nil
+	case "F":
+		m.status = m.quickFilterCell()
+		return m, nil
 	case "d", "D":
 		// Copy the table DDL (schema tab echo); empty when unavailable.
 		if strings.TrimSpace(m.tableDDL) == "" {
@@ -1081,6 +1119,11 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "ctrl+n":
 			m.historyNext()
+			return m, nil
+		case "ctrl+h":
+			if m.openHistoryModal() {
+				return m, nil
+			}
 			return m, nil
 		case "ctrl+v", "shift+insert", "ctrl+shift+v":
 			// Clipboard fallback for terminals without bracketed paste.
@@ -1435,10 +1478,51 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 	case "E":
 		m.startExport()
 		return m, nil
+	case "ctrl+h":
+		if m.openHistoryModal() {
+			return m, nil
+		}
+		return m, nil
 	case "v", "V":
 		if m.openCellModal() {
 			return m, nil
 		}
+	case "y":
+		m.status = m.copyCellText()
+		return m, nil
+	case "Y":
+		m.status = m.copyRowText()
+		return m, nil
+	case "F":
+		m.status = m.quickFilterCell()
+		return m, nil
+	case "n":
+		if m.queryPage < m.queryPageCount()-1 {
+			m.queryPage++
+			m.rebuildQueryPage()
+			m.status = fmt.Sprintf("page %d/%d (%d rows/page)", m.queryPage+1, m.queryPageCount(), m.queryPageSize)
+		}
+		return m, nil
+	case "p":
+		if m.queryPage > 0 {
+			m.queryPage--
+			m.rebuildQueryPage()
+			m.status = fmt.Sprintf("page %d/%d (%d rows/page)", m.queryPage+1, m.queryPageCount(), m.queryPageSize)
+		}
+		return m, nil
+	case "s":
+		switch m.queryPageSize {
+		case 50:
+			m.queryPageSize = 100
+		case 100:
+			m.queryPageSize = 200
+		default:
+			m.queryPageSize = 50
+		}
+		m.queryPage = 0
+		m.rebuildQueryPage()
+		m.status = fmt.Sprintf("query page size: %d", m.queryPageSize)
+		return m, nil
 	case ",":
 		m.queryTable.MoveColLeft()
 		return m, nil
