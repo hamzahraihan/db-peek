@@ -97,6 +97,7 @@ func TestFormatFromExt(t *testing.T) {
 		"out.csv": FormatCSV, "OUT.CSV": FormatCSV,
 		"out.tsv": FormatTSV, "out.json": FormatJSON,
 		"out.md": FormatMD, "out.markdown": FormatMD,
+		"out.sql": FormatSQL, "out.SQL": FormatSQL,
 	}
 	for path, want := range cases {
 		got, err := FormatFromExt(path)
@@ -124,5 +125,14 @@ func TestExportKeepsLongValues(t *testing.T) {
 	}
 	if !strings.Contains(b.String(), long) {
 		t.Fatalf("export must keep the full value, got %d bytes", b.Len())
+	}
+}
+func TestExportSQL(t *testing.T) {
+	out := write(t, FormatSQL)
+	if !strings.Contains(out, "INSERT INTO records") {
+		t.Fatalf("expected INSERT INTO records, got:\n%s", out)
+	}
+	if !strings.Contains(out, "VALUES (1, NULL);") || !strings.Contains(out, "VALUES (2, 'x');") {
+		t.Fatalf("expected formatted values, got:\n%s", out)
 	}
 }
