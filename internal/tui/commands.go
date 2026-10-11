@@ -50,6 +50,9 @@ func (m *Model) openAndLoad(connStr string) tea.Cmd {
 			_ = db.Close()
 			return connectMsg{err: fmt.Errorf("connect failed: %w", err)}
 		}
+		if m.readOnly {
+			_ = db.ApplyReadOnly(ctx)
+		}
 		return connectMsg{db: db}
 	}
 }
