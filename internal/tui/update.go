@@ -633,6 +633,25 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.cellModal {
+		switch key {
+		case "esc", "q", "enter", "v", "V":
+			m.cellModal = false
+		case "up", "k":
+			if m.cellModalOffset > 0 {
+				m.cellModalOffset--
+			}
+		case "down", "j":
+			m.cellModalOffset++
+		case "g", "home":
+			m.cellModalOffset = 0
+		case "G", "end":
+			m.cellModalOffset = 999999
+		case "c", "y":
+			m.status = m.copySelectionText(m.cellModalVal)
+		}
+		return m, nil
+	}
 	// ? opens the overlay, except where ? is text: conns filter input,
 	// form inputs, or the query editor (tab==3, editor focused) where
 	// Postgres JSON operators need the rune.
@@ -1011,6 +1030,10 @@ func (m Model) detailKey(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case "v", "V":
+		if m.openCellModal() {
+			return m, nil
+		}
 	case "d", "D":
 		// Copy the table DDL (schema tab echo); empty when unavailable.
 		if strings.TrimSpace(m.tableDDL) == "" {
@@ -1412,6 +1435,10 @@ func (m Model) queryKeys(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 	case "E":
 		m.startExport()
 		return m, nil
+	case "v", "V":
+		if m.openCellModal() {
+			return m, nil
+		}
 	case ",":
 		m.queryTable.MoveColLeft()
 		return m, nil
