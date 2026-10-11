@@ -46,7 +46,7 @@ func TestClassifyStatement(t *testing.T) {
 		"/* block */ CREATE TABLE t (a INT)",
 	}
 	for _, q := range exec {
-		if !isWriteStatement(q) {
+		if !IsWriteStatement(q) || IsRowReturning(q) {
 			t.Fatalf("want exec path for %q", q)
 		}
 	}
@@ -57,7 +57,7 @@ func TestClassifyStatement(t *testing.T) {
 		"EXPLAIN SELECT 1",
 	}
 	for _, q := range query {
-		if isWriteStatement(q) {
+		if IsWriteStatement(q) || !IsRowReturning(q) {
 			t.Fatalf("want query path for %q", q)
 		}
 	}
@@ -71,8 +71,11 @@ func TestReturningGoesThroughQueryPath(t *testing.T) {
 		"/* block */ DELETE FROM t RETURNING id",
 	}
 	for _, q := range query {
-		if isWriteStatement(q) {
+		if !IsRowReturning(q) {
 			t.Fatalf("want query path for %q", q)
+		}
+		if !IsWriteStatement(q) {
+			t.Fatalf("want write statement for %q", q)
 		}
 		if !hasReturningClause(q) {
 			t.Fatalf("want returning detected for %q", q)
@@ -169,5 +172,55 @@ func TestHintEmptyForOtherErrors(t *testing.T) {
 	}
 	if got := HintForError("postgres://u:p@h:6543/db", nil); got != "" {
 		t.Fatalf("nil error gets no hint, got %q", got)
+	}
+}
+func TestSplitStatements(t *testing.T) {
+	script := "CREATE TABLE t (id int); INSERT INTO t VALUES ('semi;colon'); -- comment;\nSELECT * FROM t;"
+	stmts := SplitStatements(script)
+	if len(stmts) != 3 {
+		t.Fatalf("expected 3 statements, got %d: %#v", len(stmts), stmts)
+	}
+	if stmts[0] != "CREATE TABLE t (id int)" {
+		t.Errorf("stmt 0: %q", stmts[0])
+	}
+	if !strings.Contains(stmts[1], "'semi;colon'") {
+		t.Errorf("stmt 1 must preserve semicolon in string: %q", stmts[1])
+	}
+	if !strings.Contains(stmts[2], "SELECT * FROM t") {
+		t.Errorf("stmt 2: %q", stmts[2])
+	}
+}
+
+func TestRunUserQueryMultiStatement(t *testing.T) {
+	d, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	ctx := context.Background()
+	script := "CREATE TABLE items (id int, name text); INSERT INTO items VALUES (1, 'apple'); INSERT INTO items VALUES (2, 'banana');"
+	s, affected, err := d.RunUserQuery(ctx, script)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s != nil {
+		t.Fatal("expected nil sample for write script")
+	}
+	if affected != 2 {
+		t.Fatalf("expected 2 affected rows, got %d", affected)
+	}
+
+	// Now run setup + select
+	scriptWithSelect := "INSERT INTO items VALUES (3, 'cherry'); SELECT * FROM items ORDER BY id;"
+	s2, affected2, err := d.RunUserQuery(ctx, scriptWithSelect)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if affected2 != -1 {
+		t.Fatalf("expected -1 affected for select script, got %d", affected2)
+	}
+	if s2 == nil || len(s2.Rows) != 3 {
+		t.Fatalf("expected 3 rows in sample, got %#v", s2)
 	}
 }
