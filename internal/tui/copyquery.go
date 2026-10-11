@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -122,4 +123,159 @@ func (m *Model) copySelectionText(text string) (status string) {
 		return fmt.Sprintf("%d lines copied to clipboard", n)
 	}
 	return writeQueryDumpFile(text)
+}
+func (m *Model) copyCellText() string {
+	var colName string
+	var val string
+
+	switch {
+	case m.tab == 2:
+		if m.sample == nil || len(m.sample.Raw) == 0 {
+			return "no cell to copy"
+		}
+		row := m.rowTable.Cursor()
+		col := m.rowTable.Col()
+		if row < 0 || row >= len(m.sample.Raw) || col < 0 || col >= len(m.sample.Columns) {
+			return "no cell to copy"
+		}
+		colName = m.sample.Columns[col]
+		val = formatCellRaw(m.sample.Raw[row][col])
+	case m.tab == 3 && m.queryFocus == 1:
+		if m.querySample == nil || len(m.querySample.Raw) == 0 {
+			return "no cell to copy"
+		}
+		pageSize := m.queryPageSize
+		if pageSize <= 0 {
+			pageSize = 50
+		}
+		absRow := m.queryPage*pageSize + m.queryTable.Cursor()
+		col := m.queryTable.Col()
+		if absRow < 0 || absRow >= len(m.querySample.Raw) || col < 0 || col >= len(m.querySample.Columns) {
+			return "no cell to copy"
+		}
+		colName = m.querySample.Columns[col]
+		val = formatCellRaw(m.querySample.Raw[absRow][col])
+	case m.tab == 0:
+		row := m.colTable.Cursor()
+		col := m.colTable.Col()
+		if row < 0 || row >= len(m.cols) {
+			return "no cell to copy"
+		}
+		c := m.cols[row]
+		switch col {
+		case 0:
+			colName, val = "name", c.Name
+		case 1:
+			colName, val = "type", c.Type
+		case 2:
+			colName, val = "nullable", c.Nullable
+		case 3:
+			colName, val = "default", c.Default
+		default:
+			colName, val = "extra", c.Extra
+		}
+	case m.tab == 1:
+		row := m.idxTable.Cursor()
+		col := m.idxTable.Col()
+		if row < 0 || row >= len(m.indexes) {
+			return "no cell to copy"
+		}
+		idx := m.indexes[row]
+		switch col {
+		case 0:
+			colName, val = "name", idx.Name
+		case 1:
+			colName, val = "unique", idx.Unique
+		default:
+			colName, val = "columns", idx.Columns
+		}
+	default:
+		return "no cell to copy"
+	}
+
+	_ = clipboardWriteAll(val)
+	return fmt.Sprintf("copied %s (%s)", colName, fitText(val, 24))
+}
+
+func (m *Model) copyRowText() string {
+	var cols []string
+	var raw []any
+
+	switch {
+	case m.tab == 2:
+		if m.sample == nil || len(m.sample.Raw) == 0 {
+			return "no row to copy"
+		}
+		row := m.rowTable.Cursor()
+		if row < 0 || row >= len(m.sample.Raw) {
+			return "no row to copy"
+		}
+		cols = m.sample.Columns
+		raw = m.sample.Raw[row]
+	case m.tab == 3 && m.queryFocus == 1:
+		if m.querySample == nil || len(m.querySample.Raw) == 0 {
+			return "no row to copy"
+		}
+		pageSize := m.queryPageSize
+		if pageSize <= 0 {
+			pageSize = 50
+		}
+		absRow := m.queryPage*pageSize + m.queryTable.Cursor()
+		if absRow < 0 || absRow >= len(m.querySample.Raw) {
+			return "no row to copy"
+		}
+		cols = m.querySample.Columns
+		raw = m.querySample.Raw[absRow]
+	default:
+		return "no row to copy"
+	}
+
+	mObj := make(map[string]any, len(cols))
+	for i, c := range cols {
+		if i < len(raw) {
+			mObj[c] = raw[i]
+		} else {
+			mObj[c] = nil
+		}
+	}
+	b, err := json.Marshal(mObj)
+	if err != nil {
+		return "failed to copy row: " + err.Error()
+	}
+	_ = clipboardWriteAll(string(b))
+	return "copied row as JSON"
+}
+
+func (m *Model) quickFilterCell() string {
+	var val string
+	var g *dataTable
+
+	switch {
+	case m.tab < 3:
+		g = m.activeGrid()
+		if m.tab == 2 && m.sample != nil {
+			row, col := m.rowTable.Cursor(), m.rowTable.Col()
+			if row >= 0 && row < len(m.sample.Rows) && col >= 0 && col < len(m.sample.Rows[row]) {
+				val = m.sample.Rows[row][col]
+			}
+		} else if g != nil && len(g.cols) > 0 {
+			row, col := g.Cursor(), g.Col()
+			if row >= 0 && row < len(g.rows) && col >= 0 && col < len(g.rows[row]) {
+				val = g.rows[row][col]
+			}
+		}
+	case m.tab == 3 && m.queryFocus == 1:
+		g = &m.queryTable
+		row, col := m.queryTable.Cursor(), m.queryTable.Col()
+		if m.querySample != nil && row >= 0 && row < len(m.queryTable.rows) && col >= 0 && col < len(m.queryTable.rows[row]) {
+			val = m.queryTable.rows[row][col]
+		}
+	}
+
+	if g == nil || val == "" || val == "NULL" {
+		return "cannot filter empty cell"
+	}
+	g.SetFilter(val)
+	m.gridFilterInput.SetValue(val)
+	return fmt.Sprintf("filtered on %q (esc to clear)", val)
 }
