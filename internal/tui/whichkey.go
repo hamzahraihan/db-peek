@@ -65,6 +65,7 @@ var keyRegistry = []KeyBinding{
 	{"/", "find in grid", "Detail,Query-results"},
 	{",/.", "prev/next column", "Detail"},
 	{"e", "edit cell (rows tab)", "Detail"},
+	{"v", "view full cell value", "Detail,Query-results"},
 	{"?", "this help", "Global"},
 	{"a/e/d", "add/edit/forget connection", "Connections"},
 	{"enter", "connect", "Connections"},
