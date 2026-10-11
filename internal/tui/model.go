@@ -91,6 +91,8 @@ type Model struct {
 	queryMs           int64
 	querySeq          int
 	queryTable        dataTable
+	queryPage         int
+	queryPageSize     int
 	qbufs             []queryBuffer // query buffers; active working copy above mirrors qbufs[qcur]
 	qcur              int
 	nextQbufID        int
@@ -134,6 +136,12 @@ type Model struct {
 	cellModalCol    string
 	cellModalVal    string
 	cellModalOffset int
+	historyModal       bool
+	historyFilterInput textinput.Model
+	historyEntries     []saved.HistoryEntry
+	historyFiltered    []int
+	historyCursor      int
+	historyOffset      int
 	// pkMemoFor/pkMemoCols cache the current table's primary key.
 	pkMemoFor  string
 	pkMemoCols []string
