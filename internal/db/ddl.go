@@ -14,8 +14,11 @@ import (
 // use AssembleTableDDL over the already-loaded columns and indexes
 // instead (no extra round trip).
 func (d *DB) TableDDL(ctx context.Context, q QualTable) (string, error) {
+	if d.Engine != nil {
+		return d.Engine.TableDDL(ctx, q)
+	}
 	switch d.Driver {
-	case MySQL:
+	case MySQL, MariaDB, ClickHouse:
 		qq := fmt.Sprintf(`SHOW CREATE TABLE %s`, d.Driver.QuoteQual(q))
 		var name, def string
 		if err := d.SQL.QueryRowContext(ctx, qq).Scan(&name, &def); err != nil {
@@ -25,8 +28,8 @@ func (d *DB) TableDDL(ctx context.Context, q QualTable) (string, error) {
 			return "", fmt.Errorf("table %q has no stored DDL", q.String())
 		}
 		return def, nil
-	case Postgres:
-		return "", fmt.Errorf("table %q: no native DDL on postgres (assemble from columns)", q.String())
+	case Postgres, SQLServer:
+		return "", fmt.Errorf("table %q: no native DDL on %s (assemble from columns)", q.String(), d.Driver)
 	default:
 		qq := `SELECT sql FROM sqlite_master WHERE type IN ('table','view') AND name = ` + d.Driver.Placeholder(1)
 		var def sql.NullString
