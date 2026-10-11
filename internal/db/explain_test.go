@@ -19,6 +19,12 @@ func TestExplainIsEngineSpecific(t *testing.T) {
 		{Postgres, true, "EXPLAIN (ANALYZE, BUFFERS) select 1"},
 		{MySQL, false, "EXPLAIN select 1"},
 		{MySQL, true, "EXPLAIN ANALYZE select 1"},
+		{MariaDB, false, "EXPLAIN select 1"},
+		{MariaDB, true, "EXPLAIN ANALYZE select 1"},
+		{SQLServer, false, "EXPLAIN select 1"},
+		{SQLServer, true, "EXPLAIN select 1"},
+		{ClickHouse, false, "EXPLAIN select 1"},
+		{ClickHouse, true, "EXPLAIN select 1"},
 	}
 	for _, c := range cases {
 		d := &DB{Driver: c.driver}
@@ -32,7 +38,10 @@ func TestPlaceholder(t *testing.T) {
 	if got := Postgres.Placeholder(2); got != "$2" {
 		t.Fatalf("postgres must number placeholders, got %q", got)
 	}
-	for _, d := range []Driver{MySQL, SQLite} {
+	if got := SQLServer.Placeholder(2); got != "@p2" {
+		t.Fatalf("sqlserver must use @p2, got %q", got)
+	}
+	for _, d := range []Driver{MySQL, MariaDB, SQLite, ClickHouse} {
 		if got := d.Placeholder(2); got != "?" {
 			t.Fatalf("%s must use ?, got %q", d, got)
 		}
