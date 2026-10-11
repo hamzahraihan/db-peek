@@ -130,6 +130,10 @@ type Model struct {
 	// Named cellEditing because Model.editing is the saved-profile editor.
 	cellEditing bool
 	cellInput   textinput.Model
+	cellModal       bool
+	cellModalCol    string
+	cellModalVal    string
+	cellModalOffset int
 	// pkMemoFor/pkMemoCols cache the current table's primary key.
 	pkMemoFor  string
 	pkMemoCols []string
