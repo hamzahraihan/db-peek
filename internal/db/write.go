@@ -69,33 +69,57 @@ func stripLeadingComments(q string) string {
 	}
 }
 
-// isWriteStatement reports whether sql should run through Exec (rows
-// affected) rather than Query (result grid). Row-returning leading
-// keywords stay on the query path.
-func isWriteStatement(sql string) bool {
-	return IsWriteStatement(sql)
-}
-
-// IsWriteStatement reports whether sql would modify data or schema
-// (INSERT/UPDATE/DELETE/DDL). SELECT/WITH/VALUES/TABLE/EXPLAIN and
-// ... RETURNING statements read and report false. Callers gate
-// read-only mode on this.
-func IsWriteStatement(sql string) bool {	s := stripLeadingComments(sql)
+// IsRowReturning reports whether sql returns rows and should route through Query
+// rather than ExecStmt (SELECT, WITH ... SELECT, VALUES, TABLE, EXPLAIN, or statements with RETURNING).
+func IsRowReturning(sql string) bool {
+	s := stripLeadingComments(sql)
 	if s == "" {
 		return false
 	}
 	if hasReturningClause(sql) {
+		return true
+	}
+	toks := splitSQLWords(s)
+	if len(toks) == 0 {
 		return false
 	}
-	word := s
-	for i, r := range s {
-		if r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '(' {
-			word = s[:i]
-			break
-		}
-	}
-	switch strings.ToUpper(word) {
+	switch strings.ToUpper(toks[0]) {
 	case "SELECT", "WITH", "VALUES", "TABLE", "EXPLAIN":
+		return true
+	default:
+		return false
+	}
+}
+
+// IsWriteStatement reports whether sql would modify data or schema
+// (INSERT/UPDATE/DELETE/MERGE/REPLACE/DDL), including statements with
+// a RETURNING clause or mutating CTEs. Callers gate read-only mode on this.
+func IsWriteStatement(sql string) bool {
+	s := stripLeadingComments(sql)
+	if s == "" {
+		return false
+	}
+	toks := splitSQLWords(s)
+	if len(toks) == 0 {
+		return false
+	}
+	first := strings.ToUpper(toks[0])
+	switch first {
+	case "INSERT", "UPDATE", "DELETE", "MERGE", "REPLACE",
+		"CREATE", "DROP", "ALTER", "TRUNCATE", "GRANT", "REVOKE":
+		return true
+	case "WITH":
+		// Detect mutating CTEs: WITH ... INSERT/UPDATE/DELETE
+		for i, t := range toks {
+			w := strings.ToUpper(t)
+			if (w == "DELETE" && i+1 < len(toks) && strings.ToUpper(toks[i+1]) == "FROM") ||
+				(w == "INSERT" && i+1 < len(toks) && strings.ToUpper(toks[i+1]) == "INTO") ||
+				(w == "UPDATE") {
+				return true
+			}
+		}
+		return false
+	case "SELECT", "VALUES", "TABLE", "EXPLAIN":
 		return false
 	default:
 		return true
@@ -251,6 +275,9 @@ func HintForError(connStr string, err error) string {
 // Explain returns the engine-appropriate EXPLAIN SQL for q. SQLite has
 // no EXPLAIN ANALYZE, so analyze is ignored there.
 func (d *DB) Explain(q string, analyze bool) string {
+	if d.Engine != nil {
+		return d.Engine.Explain(q, analyze)
+	}
 	q = trimStatement(q)
 	switch d.Driver {
 	case Postgres:
@@ -258,10 +285,12 @@ func (d *DB) Explain(q string, analyze bool) string {
 			return "EXPLAIN (ANALYZE, BUFFERS) " + q
 		}
 		return "EXPLAIN " + q
-	case MySQL:
+	case MySQL, MariaDB:
 		if analyze {
 			return "EXPLAIN ANALYZE " + q
 		}
+		return "EXPLAIN " + q
+	case ClickHouse, SQLServer:
 		return "EXPLAIN " + q
 	default:
 		return "EXPLAIN QUERY PLAN " + q
@@ -271,10 +300,14 @@ func (d *DB) Explain(q string, analyze bool) string {
 // Placeholder returns the driver-specific bind marker for the i-th
 // (1-based) parameter: Postgres numbers them, MySQL and SQLite use "?".
 func (d Driver) Placeholder(i int) string {
-	if d == Postgres {
+	switch d {
+	case Postgres:
 		return "$" + strconv.Itoa(i)
+	case SQLServer:
+		return "@p" + strconv.Itoa(i)
+	default:
+		return "?"
 	}
-	return "?"
 }
 
 // UpdateCell issues a single-parameter UPDATE identified by the full
@@ -285,6 +318,9 @@ func (d Driver) Placeholder(i int) string {
 // Postgres has no implicit cast, so binding a string for a bigint key
 // fails with "operator does not exist: bigint = text".
 func (d *DB) UpdateCell(ctx context.Context, q QualTable, pk []string, pkVals []any, col string, val any) (int64, error) {
+	if d.Engine != nil {
+		return d.Engine.UpdateCell(ctx, q, pk, pkVals, col, val)
+	}
 	if len(pk) == 0 || len(pk) != len(pkVals) {
 		return 0, fmt.Errorf("update %s: primary key value count does not match the key", q.String())
 	}
@@ -309,27 +345,190 @@ func (d *DB) UpdateCell(ctx context.Context, q QualTable, pk []string, pkVals []
 	return res.RowsAffected()
 }
 
-// RunUserQuery routes one editor statement: row-returning statements go
-// through Query (grid), everything else through ExecStmt (rows affected,
-// returned as n with a nil sample). n is -1 for the query path.
+// RunUserQuery routes one or more editor statements. Row-returning statements
+// go through Query (grid), while scripts and write statements run sequentially
+// through ExecStmt, reporting total rows affected.
 func (d *DB) RunUserQuery(ctx context.Context, sql string) (s *Sample, n int64, err error) {
-	if !isWriteStatement(sql) {
-		s, err := d.Query(ctx, trimStatement(sql))
-		return s, -1, err
+	if d.Engine != nil {
+		return d.Engine.RunUserQuery(ctx, sql)
 	}
-	n, err = d.ExecStmt(ctx, sql)
-	return nil, n, err
+	stmts := SplitStatements(sql)
+	if len(stmts) == 0 {
+		return nil, 0, nil
+	}
+	if len(stmts) == 1 {
+		stmt := stmts[0]
+		if IsRowReturning(stmt) {
+			s, err := d.Query(ctx, stmt)
+			return s, -1, err
+		}
+		n, err = d.ExecStmt(ctx, stmt)
+		return nil, n, err
+	}
+
+	var totalAffected int64
+	for i, stmt := range stmts {
+		isLast := i == len(stmts)-1
+		if isLast && IsRowReturning(stmt) {
+			s, err := d.Query(ctx, stmt)
+			if err != nil {
+				return nil, -1, fmt.Errorf("statement %d (%s): %w", i+1, truncate(stmt, 30), err)
+			}
+			return s, -1, nil
+		}
+		affected, err := d.ExecStmt(ctx, stmt)
+		if err != nil {
+			return nil, -1, fmt.Errorf("statement %d (%s): %w", i+1, truncate(stmt, 30), err)
+		}
+		if affected > 0 {
+			totalAffected += affected
+		}
+	}
+	return nil, totalAffected, nil
 }
 
+// SplitStatements splits a multi-statement SQL script into individual statements
+// by semicolons, respecting single quotes, double quotes, backticks, and comments.
+func SplitStatements(sql string) []string {
+	var stmts []string
+	var b strings.Builder
+	inSingle := false
+	inDouble := false
+	inBacktick := false
+	inLineComment := false
+	inBlockComment := false
+
+	n := len(sql)
+	for i := 0; i < n; i++ {
+		c := sql[i]
+		next := byte(0)
+		if i+1 < n {
+			next = sql[i+1]
+		}
+
+		if inLineComment {
+			b.WriteByte(c)
+			if c == '\n' {
+				inLineComment = false
+			}
+			continue
+		}
+		if inBlockComment {
+			b.WriteByte(c)
+			if c == '*' && next == '/' {
+				b.WriteByte('/')
+				i++
+				inBlockComment = false
+			}
+			continue
+		}
+
+		if inSingle {
+			b.WriteByte(c)
+			if c == '\'' {
+				if next == '\'' {
+					b.WriteByte('\'')
+					i++
+				} else {
+					inSingle = false
+				}
+			}
+			continue
+		}
+		if inDouble {
+			b.WriteByte(c)
+			if c == '"' {
+				if next == '"' {
+					b.WriteByte('"')
+					i++
+				} else {
+					inDouble = false
+				}
+			}
+			continue
+		}
+		if inBacktick {
+			b.WriteByte(c)
+			if c == '`' {
+				inBacktick = false
+			}
+			continue
+		}
+
+		if c == '-' && next == '-' {
+			inLineComment = true
+			b.WriteString("--")
+			i++
+			continue
+		}
+		if c == '/' && next == '*' {
+			inBlockComment = true
+			b.WriteString("/*")
+			i++
+			continue
+		}
+
+		if c == '\'' {
+			inSingle = true
+			b.WriteByte(c)
+			continue
+		}
+		if c == '"' {
+			inDouble = true
+			b.WriteByte(c)
+			continue
+		}
+		if c == '`' {
+			inBacktick = true
+			b.WriteByte(c)
+			continue
+		}
+
+		if c == ';' {
+			stmt := strings.TrimSpace(b.String())
+			if stmt != "" {
+				stmts = append(stmts, stmt)
+			}
+			b.Reset()
+			continue
+		}
+
+		b.WriteByte(c)
+	}
+
+	if remaining := strings.TrimSpace(b.String()); remaining != "" {
+		stmts = append(stmts, remaining)
+	}
+	return stmts
+}
 // ExecStmt runs a non-row-returning statement and reports rows affected.
 func (d *DB) ExecStmt(ctx context.Context, sql string) (int64, error) {
-	res, err := d.SQL.ExecContext(ctx, trimStatement(sql))
-	if err != nil {
-		return 0, err
+	if d.Engine != nil {
+		return d.Engine.ExecStmt(ctx, sql)
 	}
+	res, err := d.SQL.ExecContext(ctx, trimStatement(sql))
 	n, err := res.RowsAffected()
 	if err != nil {
 		return 0, err
 	}
 	return n, nil
+}
+// ApplyReadOnly configures the connection at the session/engine level to refuse
+// writes even if client-side validation is bypassed.
+func (d *DB) ApplyReadOnly(ctx context.Context) error {
+	if d == nil || d.SQL == nil {
+		return nil
+	}
+	switch d.Driver {
+	case SQLite:
+		_, err := d.SQL.ExecContext(ctx, "PRAGMA query_only = ON")
+		return err
+	case Postgres:
+		_, err := d.SQL.ExecContext(ctx, "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY")
+		return err
+	case MySQL, MariaDB:
+		_, err := d.SQL.ExecContext(ctx, "SET SESSION TRANSACTION READ ONLY")
+		return err
+	}
+	return nil
 }
