@@ -31,6 +31,9 @@ func readProfiles(t *testing.T, path string) []Profile {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if dec, err := decryptPayload(data); err == nil {
+		data = dec
+	}
 	var out []Profile
 	if err := json.Unmarshal(data, &out); err != nil {
 		t.Fatal(err)
