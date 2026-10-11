@@ -170,7 +170,8 @@ func (m Model) detailFoot() string {
 		}
 		base := renderKeyPairs([][2]string{
 			{"H/L", "buffer"}, {"t", "new"}, {"X", "close"},
-			{"e", "edit"}, {"o", "sort page"}, {"/", "find"}, {"1-5", "tabs"}, {"?", "keys"},
+			{"e", "edit"}, {"n/p", "page"}, {"s", "size"}, {"y/Y", "yank"}, {"F", "filter"},
+			{"o", "sort"}, {"/", "find"}, {"1-5", "tabs"}, {"?", "keys"},
 		}, w)
 		return withFilterSuffix(base, w, m.queryTable.FilterText())
 	case 4:
@@ -187,7 +188,7 @@ func (m Model) detailFoot() string {
 	default:
 		pairs := [][2]string{
 			{"↑↓", "move"}, {"pgup/pgdn", "page"}, {"n/p", "page"},
-			{"s", "size"}, {"o", "sort page"}, {"/", "find"}, {"1-5", "tabs"}, {"?", "keys"},
+			{"s", "size"}, {"y/Y", "yank"}, {"F", "filter"}, {"o", "sort page"}, {"/", "find"}, {"1-5", "tabs"}, {"?", "keys"},
 		}
 		if m.tab == 0 {
 			pairs = [][2]string{
@@ -215,6 +216,16 @@ func (m Model) detailFoot() string {
 func (m Model) resultsStateLine() string {
 	t := &m.queryTable
 	var parts []string
+	if m.querySample != nil && len(m.querySample.Rows) > 0 {
+		pageSize := m.queryPageSize
+		if pageSize <= 0 {
+			pageSize = 50
+		}
+		totalPages := (len(m.querySample.Rows) + pageSize - 1) / pageSize
+		if totalPages > 1 {
+			parts = append(parts, fmt.Sprintf("page %d/%d (%d rows)", m.queryPage+1, totalPages, len(m.querySample.Rows)))
+		}
+	}
 	if c := t.SortedCol(); c >= 0 && c < len(t.cols) && t.SortState() != "" {
 		dir := "asc"
 		if st := t.SortState(); len(st) >= 4 && st[len(st)-4:] == "desc" {
