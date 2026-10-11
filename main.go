@@ -10,7 +10,7 @@
 //	  db-peek --save NAME [conn]     save the connection as NAME
 //	  db-peek --forget NAME          delete a saved connection
 //
-//	Conn forms: postgres://... | mysql://... | ./app.db | :memory: | sqlite://path
+//	Conn forms: postgres://... | mysql://... | mariadb://... | sqlserver://... | clickhouse://... | redis://... | mongodb://... | ./app.db | :memory: | sqlite://path
 //	A bare NAME matching a saved connection resolves to it. Env DATABASE_URL
 //	is used when no argument is given.
 package main
@@ -36,7 +36,7 @@ var appVersion = "0.6.0"
 
 func main() {
 	var (
-		dbFlag   = flag.String("db", "", "connection string (postgres://, mysql://, sqlite path)")
+		dbFlag   = flag.String("db", "", "connection string (postgres://, mysql://, mariadb://, sqlserver://, clickhouse://, redis://, mongodb://, sqlite path)")
 		listF    = flag.Bool("list", false, "print table names and exit")
 		schemaF  = flag.String("schema", "", "print columns + indexes for TABLE and exit")
 		rowsF    = flag.String("rows", "", "print N rows of TABLE and exit (see --limit/--offset)")
@@ -61,7 +61,7 @@ Usage:
   db-peek --save NAME [conn]     save the connection as NAME
   db-peek --forget NAME          delete a saved connection
 
-Conn: postgres://... | mysql://... | ./app.db | :memory: | sqlite://path
+Conn: postgres://... | mysql://... | mariadb://... | sqlserver://... | clickhouse://... | redis://... | mongodb://... | ./app.db | :memory: | sqlite://path
 or a saved NAME. Env DATABASE_URL fills conn when no argument is given.
 
 `)
@@ -153,6 +153,9 @@ or a saved NAME. Env DATABASE_URL fills conn when no argument is given.
 	defer db.Close()
 	if err := db.Ping(ctx); err != nil {
 		fatal(fmt.Errorf("connect failed: %w", err))
+	}
+	if *roF {
+		_ = db.ApplyReadOnly(ctx)
 	}
 
 	switch {
