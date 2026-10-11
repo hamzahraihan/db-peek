@@ -4,7 +4,7 @@
 [![Release](https://github.com/hamzahraihan/db-peek/actions/workflows/release.yml/badge.svg)](https://github.com/hamzahraihan/db-peek/actions)
 ![Go 1.26+](https://img.shields.io/badge/go-1.26+-blue)
 
-Peek at Postgres, MySQL, and SQLite from the terminal. Interactive TUI plus one-shot CLI (`--list --schema --rows --query`).
+Peek at Postgres, MySQL, MariaDB, SQL Server, ClickHouse, Redis, MongoDB, and SQLite from the terminal. Interactive TUI plus one-shot CLI (`--list --schema --rows --query`).
 
 ## Install
 
@@ -27,7 +27,7 @@ db-peek ./ecommerce.db --schema users
 db-peek ./ecommerce.db --query "SELECT 1"
 ```
 
-Conn forms: `postgres://...` | `mysql://...` | `./app.db` | `:memory:` | `sqlite://path`.
+Conn forms: `postgres://...` | `mysql://...` | `mariadb://...` | `sqlserver://...` | `clickhouse://...` | `redis://...` | `mongodb://...` | `./app.db` | `:memory:` | `sqlite://path`.
 A bare saved NAME resolves to it. `DATABASE_URL` fills conn when no arg is given.
 SQLite paths must exist; nothing is auto-created.
 
@@ -65,7 +65,7 @@ Stored under the OS config dir (`db-peek/connections.json`, file `0600`); passwo
 
 ## Export
 
-In TUI press `E`: `.csv` `.tsv` `.json` `.md` by extension. NULL is empty (JSON null).
+In TUI press `E`: `.csv` `.tsv` `.json` `.md` `.sql` by extension. NULL is empty (JSON null).
 
 ## Dev
 
