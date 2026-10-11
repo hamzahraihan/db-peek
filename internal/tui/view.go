@@ -27,6 +27,9 @@ func (m Model) viewString() string {
 	if m.showHelp {
 		return m.helpView()
 	}
+	if m.cellModal {
+		return m.cellModalView()
+	}
 	switch m.screen {
 	case screenConns:
 		return m.connsView()
