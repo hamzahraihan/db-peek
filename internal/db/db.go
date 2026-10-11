@@ -10,9 +10,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
+	"time"
+	_ "github.com/ClickHouse/clickhouse-go/v2"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "github.com/microsoft/go-mssqldb"
 	_ "modernc.org/sqlite"
 )
 
@@ -20,15 +22,22 @@ import (
 type Driver string
 
 const (
-	Postgres Driver = "postgres"
-	MySQL    Driver = "mysql"
-	SQLite   Driver = "sqlite"
+	Postgres   Driver = "postgres"
+	MySQL      Driver = "mysql"
+	SQLite     Driver = "sqlite"
+	MariaDB    Driver = "mariadb"
+	SQLServer  Driver = "sqlserver"
+	ClickHouse Driver = "clickhouse"
+	Redis      Driver = "redis"
+	MongoDB    Driver = "mongodb"
 )
 
 func (d Driver) QuoteIdent(s string) string {
 	switch d {
-	case MySQL:
+	case MySQL, MariaDB, ClickHouse:
 		return "`" + strings.ReplaceAll(s, "`", "``") + "`"
+	case SQLServer:
+		return "[" + strings.ReplaceAll(s, "]", "]]") + "]"
 	default:
 		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 	}
@@ -39,6 +48,7 @@ type DB struct {
 	SQL     *sql.DB
 	Driver  Driver
 	Display string // human label for title bar (dbname / file), never contains password
+	Engine  Engine // non-nil for NoSQL backends (Redis, MongoDB)
 }
 
 func redact(raw string) string {
@@ -47,6 +57,13 @@ func redact(raw string) string {
 		return u.Redacted()
 	}
 	return raw
+}
+func configurePool(sqlDB *sql.DB) {
+	if sqlDB != nil {
+		sqlDB.SetMaxOpenConns(10)
+		sqlDB.SetMaxIdleConns(2)
+		sqlDB.SetConnMaxLifetime(15 * time.Minute)
+	}
 }
 
 // Open dials connStr. Accepted forms:
@@ -72,6 +89,7 @@ func Open(connStr string) (*DB, error) {
 		if u, err := url.Parse(raw); err == nil && u.Path != "" && u.Path != "/" {
 			name = strings.TrimPrefix(u.Path, "/")
 		}
+		configurePool(sqlDB)
 		return &DB{SQL: sqlDB, Driver: Postgres, Display: name}, nil
 
 	case strings.HasPrefix(lower, "mysql://"):
@@ -83,8 +101,62 @@ func Open(connStr string) (*DB, error) {
 		if err != nil {
 			return nil, err
 		}
+		configurePool(sqlDB)
 		return &DB{SQL: sqlDB, Driver: MySQL, Display: name}, nil
 
+	case strings.HasPrefix(lower, "mariadb://"):
+		dsn, name, err := mysqlURLToDSN(raw)
+		if err != nil {
+			return nil, err
+		}
+		sqlDB, err := sql.Open("mysql", dsn)
+		if err != nil {
+			return nil, err
+		}
+		configurePool(sqlDB)
+		return &DB{SQL: sqlDB, Driver: MariaDB, Display: name}, nil
+
+	case strings.HasPrefix(lower, "sqlserver://") || strings.HasPrefix(lower, "mssql://"):
+		sqlDB, err := sql.Open("sqlserver", raw)
+		if err != nil {
+			return nil, err
+		}
+		name := "sqlserver"
+		if u, err := url.Parse(raw); err == nil {
+			if dbParam := u.Query().Get("database"); dbParam != "" {
+				name = dbParam
+			} else if u.Path != "" && u.Path != "/" {
+				name = strings.TrimPrefix(u.Path, "/")
+			}
+		}
+		configurePool(sqlDB)
+		return &DB{SQL: sqlDB, Driver: SQLServer, Display: name}, nil
+
+	case strings.HasPrefix(lower, "clickhouse://") || strings.HasPrefix(lower, "clickhouse:"):
+		sqlDB, err := sql.Open("clickhouse", raw)
+		if err != nil {
+			return nil, err
+		}
+		name := "default"
+		if u, err := url.Parse(raw); err == nil && u.Path != "" && u.Path != "/" {
+			name = strings.TrimPrefix(u.Path, "/")
+		}
+		configurePool(sqlDB)
+		return &DB{SQL: sqlDB, Driver: ClickHouse, Display: name}, nil
+
+	case strings.HasPrefix(lower, "redis://") || strings.HasPrefix(lower, "rediss://"):
+		eng, name, err := openRedis(raw)
+		if err != nil {
+			return nil, err
+		}
+		return &DB{Driver: Redis, Display: name, Engine: eng}, nil
+
+	case strings.HasPrefix(lower, "mongodb://") || strings.HasPrefix(lower, "mongodb+srv://"):
+		eng, name, err := openMongo(raw)
+		if err != nil {
+			return nil, err
+		}
+		return &DB{Driver: MongoDB, Display: name, Engine: eng}, nil
 	case strings.HasPrefix(lower, "sqlite://") || strings.HasPrefix(lower, "file:") || lower == ":memory:" ||
 		strings.HasSuffix(lower, ".db") || strings.HasSuffix(lower, ".db3") ||
 		strings.HasSuffix(lower, ".sqlite") || strings.HasSuffix(lower, ".sqlite3"):
@@ -98,13 +170,14 @@ func Open(connStr string) (*DB, error) {
 		if err != nil {
 			return nil, err
 		}
+		configurePool(sqlDB)
 		return &DB{SQL: sqlDB, Driver: SQLite, Display: displayBase(path)}, nil
 
 	default:
 		// Bare path without a sqlite extension (e.g. ./app, /tmp/demo):
 		// open only when the file exists — never auto-create on a typo.
 		if strings.Contains(raw, "://") {
-			return nil, fmt.Errorf("unrecognized connection string %q: want postgres://, mysql://, or a sqlite file path", redact(raw))
+			return nil, fmt.Errorf("unrecognized connection string %q: want postgres://, mysql://, mariadb://, sqlserver://, clickhouse://, redis://, mongodb://, or a sqlite file path", redact(raw))
 		}
 		if _, err := os.Stat(raw); err != nil {
 			return nil, fmt.Errorf("file %q not found: want postgres://, mysql://, or an existing sqlite path", raw)
@@ -113,6 +186,7 @@ func Open(connStr string) (*DB, error) {
 		if err != nil {
 			return nil, err
 		}
+		configurePool(sqlDB)
 		return &DB{SQL: sqlDB, Driver: SQLite, Display: displayBase(raw)}, nil
 	}
 }
@@ -130,9 +204,17 @@ func displayBase(p string) string {
 // mysqlURLToDSN converts mysql://user:pass@host:port/db?opt=v to
 // go-sql-driver DSN user:pass@tcp(host:port)/db?opt=v.
 func mysqlURLToDSN(raw string) (dsn, dbName string, err error) {
-	u, err := url.Parse(raw)
+	lower := strings.ToLower(raw)
+	if !strings.HasPrefix(lower, "mysql://") && !strings.HasPrefix(lower, "mariadb://") {
+		return raw, "", nil
+	}
+	rawNorm := raw
+	if strings.HasPrefix(lower, "mariadb://") {
+		rawNorm = "mysql://" + raw[len("mariadb://"):]
+	}
+	u, err := url.Parse(rawNorm)
 	if err != nil {
-		return "", "", fmt.Errorf("bad mysql url: %w", err)
+		return "", "", fmt.Errorf("bad connection url: %w", err)
 	}
 	user := u.User.Username()
 	pass, _ := u.User.Password()
@@ -158,8 +240,19 @@ func mysqlURLToDSN(raw string) (dsn, dbName string, err error) {
 	return fmt.Sprintf("%s@tcp(%s)/%s?%s", creds, host, dbName, q.Encode()), dbName, nil
 }
 
-func (d *DB) Ping(ctx context.Context) error { return d.SQL.PingContext(ctx) }
-func (d *DB) Close() error                   { return d.SQL.Close() }
+func (d *DB) Ping(ctx context.Context) error {
+	if d.Engine != nil {
+		return d.Engine.Ping(ctx)
+	}
+	return d.SQL.PingContext(ctx)
+}
+
+func (d *DB) Close() error {
+	if d.Engine != nil {
+		return d.Engine.Close()
+	}
+	return d.SQL.Close()
+}
 
 // Column is a normalized column description across engines.
 type Column struct {
@@ -193,12 +286,27 @@ Raw  [][]any
 // Postgres-internal (pg_*) and Supabase-managed schemas just like
 // ListSchemas — so --list matches the explorer (public-first UX).
 func (d *DB) ListTables(ctx context.Context) ([]string, error) {
+	if d.Engine != nil {
+		refs, err := d.Engine.ListTablesInSchema(ctx, "")
+		if err != nil {
+			return nil, err
+		}
+		out := make([]string, len(refs))
+		for i, r := range refs {
+			out[i] = r.Name
+		}
+		return out, nil
+	}
 	var q string
 	switch d.Driver {
 	case Postgres:
 		q = `SELECT tablename FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema','auth','storage','realtime','extensions','graphql','graphql_public','supabase_functions','supabase_migrations','vault','pgsodium','pgsodium_masks','net','postgis','_postgis','tiger','tiger_data','topology','cron','_realtime','_supabase') AND schemaname NOT LIKE 'pg\_%' ESCAPE '\' AND schemaname NOT LIKE 'pg_temp_%' AND schemaname NOT LIKE 'pg_toast%' ORDER BY tablename`
-	case MySQL:
+	case MySQL, MariaDB:
 		q = `SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' ORDER BY table_name`
+	case SQLServer:
+		q = `SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA', 'guest') ORDER BY TABLE_NAME`
+	case ClickHouse:
+		q = `SELECT name FROM system.tables WHERE database = currentDatabase() AND is_temporary = 0 ORDER BY name`
 	default:
 		q = `SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`
 	}
@@ -220,6 +328,9 @@ func (d *DB) ListTables(ctx context.Context) ([]string, error) {
 
 // Columns returns ordered column metadata for one table.
 func (d *DB) Columns(ctx context.Context, q QualTable) ([]Column, error) {
+	if d.Engine != nil {
+		return d.Engine.Columns(ctx, q)
+	}
 	switch d.Driver {
 	case Postgres:
 		rows, err := d.SQL.QueryContext(ctx, `
@@ -244,12 +355,19 @@ WHERE table_name = $1 AND table_schema = $2 ORDER BY ordinal_position`, q.Name, 
 			out = append(out, c)
 		}
 		return out, rows.Err()
-	case MySQL:
-		rows, err := d.SQL.QueryContext(ctx, `
+	case MySQL, MariaDB:
+		schemaClause := "table_schema = DATABASE()"
+		var args []any
+		if q.Schema != "" {
+			schemaClause = "table_schema = ?"
+			args = append(args, q.Schema)
+		}
+		args = append(args, q.Name)
+		rows, err := d.SQL.QueryContext(ctx, fmt.Sprintf(`
 SELECT column_name, column_type, is_nullable, COALESCE(column_default, ''),
        CONCAT(column_key, CASE WHEN extra <> '' THEN ' ' || extra ELSE '' END)
 FROM information_schema.columns
-WHERE table_schema = DATABASE() AND table_name = ? ORDER BY ordinal_position`, q.Name)
+WHERE %s AND table_name = ? ORDER BY ordinal_position`, schemaClause), args...)
 		if err != nil {
 			return nil, err
 		}
@@ -264,6 +382,74 @@ WHERE table_schema = DATABASE() AND table_name = ? ORDER BY ordinal_position`, q
 			if def.Valid {
 				c.Default = def.String
 			}
+			out = append(out, c)
+		}
+		return out, rows.Err()
+	case SQLServer:
+		schemaClause := "(c.TABLE_SCHEMA = @p2 OR @p2 = '')"
+		schemaVal := q.Schema
+		if schemaVal == "" {
+			schemaVal = "dbo"
+		}
+		rows, err := d.SQL.QueryContext(ctx, `
+SELECT c.COLUMN_NAME,
+       c.DATA_TYPE + COALESCE('(' + CASE WHEN c.CHARACTER_MAXIMUM_LENGTH = -1 THEN 'max' ELSE CAST(c.CHARACTER_MAXIMUM_LENGTH AS VARCHAR) END + ')', ''),
+       c.IS_NULLABLE,
+       COALESCE(c.COLUMN_DEFAULT, '')
+FROM INFORMATION_SCHEMA.COLUMNS c
+WHERE c.TABLE_NAME = @p1 AND `+schemaClause+`
+ORDER BY c.ORDINAL_POSITION`, q.Name, schemaVal)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var out []Column
+		for rows.Next() {
+			var c Column
+			var def sql.NullString
+			if err := rows.Scan(&c.Name, &c.Type, &c.Nullable, &def); err != nil {
+				return nil, err
+			}
+			if def.Valid {
+				c.Default = def.String
+			}
+			out = append(out, c)
+		}
+		return out, rows.Err()
+	case ClickHouse:
+		dbClause := "database = currentDatabase()"
+		var args []any
+		if q.Schema != "" {
+			dbClause = "database = ?"
+			args = append(args, q.Schema)
+		}
+		args = append(args, q.Name)
+		rows, err := d.SQL.QueryContext(ctx, fmt.Sprintf(`
+SELECT name, type, is_in_primary_key, COALESCE(default_expression, '')
+FROM system.columns
+WHERE %s AND table = ?
+ORDER BY position`, dbClause), args...)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var out []Column
+		for rows.Next() {
+			var c Column
+			var isPK uint8
+			var def string
+			if err := rows.Scan(&c.Name, &c.Type, &isPK, &def); err != nil {
+				return nil, err
+			}
+			c.Nullable = "YES"
+			if strings.HasPrefix(c.Type, "Nullable(") {
+				c.Nullable = "YES"
+			}
+			if isPK == 1 {
+				c.Extra = "PK"
+				c.Nullable = "NO"
+			}
+			c.Default = def
 			out = append(out, c)
 		}
 		return out, rows.Err()
@@ -307,6 +493,9 @@ WHERE table_schema = DATABASE() AND table_name = ? ORDER BY ordinal_position`, q
 // nil when it has none. Cell editing needs the key to address exactly
 // one row, so "no key" is a normal answer, not an error.
 func (d *DB) PrimaryKey(ctx context.Context, q QualTable) ([]string, error) {
+	if d.Engine != nil {
+		return d.Engine.PrimaryKey(ctx, q)
+	}
 	var (
 		rows *sql.Rows
 		err  error
@@ -321,11 +510,42 @@ JOIN pg_namespace n ON n.oid = c.relnamespace
 JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
 WHERE c.relname = $1 AND n.nspname = $2 AND i.indisprimary
 ORDER BY array_position(i.indkey, a.attnum)`, q.Name, q.Schema)
-	case MySQL:
-		rows, err = d.SQL.QueryContext(ctx, `
+	case MySQL, MariaDB:
+		schemaClause := "TABLE_SCHEMA = DATABASE()"
+		var args []any
+		if q.Schema != "" {
+			schemaClause = "TABLE_SCHEMA = ?"
+			args = append(args, q.Schema)
+		}
+		args = append(args, q.Name)
+		rows, err = d.SQL.QueryContext(ctx, fmt.Sprintf(`
 SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE
-WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = 'PRIMARY'
-ORDER BY ORDINAL_POSITION`, q.Name)
+WHERE %s AND TABLE_NAME = ? AND CONSTRAINT_NAME = 'PRIMARY'
+ORDER BY ORDINAL_POSITION`, schemaClause), args...)
+	case SQLServer:
+		schemaVal := q.Schema
+		if schemaVal == "" {
+			schemaVal = "dbo"
+		}
+		rows, err = d.SQL.QueryContext(ctx, `
+SELECT kcu.COLUMN_NAME
+FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+  ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA
+WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' AND tc.TABLE_NAME = @p1 AND tc.TABLE_SCHEMA = @p2
+ORDER BY kcu.ORDINAL_POSITION`, q.Name, schemaVal)
+	case ClickHouse:
+		cols, cerr := d.Columns(ctx, q)
+		if cerr != nil {
+			return nil, cerr
+		}
+		var out []string
+		for _, c := range cols {
+			if c.Extra == "PK" {
+				out = append(out, c.Name)
+			}
+		}
+		return out, nil
 	default:
 		// PRAGMA table_info already encodes the key as Extra = "PK(n)";
 		// reuse it rather than issuing a second statement.
@@ -372,6 +592,9 @@ ORDER BY ORDINAL_POSITION`, q.Name)
 
 // Indexes returns index metadata for one table.
 func (d *DB) Indexes(ctx context.Context, q QualTable) ([]Index, error) {
+	if d.Engine != nil {
+		return d.Engine.Indexes(ctx, q)
+	}
 	switch d.Driver {
 	case Postgres:
 		rows, err := d.SQL.QueryContext(ctx,
@@ -393,7 +616,7 @@ func (d *DB) Indexes(ctx context.Context, q QualTable) ([]Index, error) {
 			out = append(out, Index{Name: name, Unique: uniq, Columns: shortIndexCols(def), DDL: def})
 		}
 		return out, rows.Err()
-	case MySQL:
+	case MySQL, MariaDB:
 		q := fmt.Sprintf(`SHOW INDEX FROM %s`, d.Driver.QuoteQual(q))
 		rows, err := d.SQL.QueryContext(ctx, q)
 		if err != nil {
@@ -451,6 +674,81 @@ func (d *DB) Indexes(ctx context.Context, q QualTable) ([]Index, error) {
 		for _, n := range order {
 			k := byName[n]
 			out = append(out, Index{Name: k.name, Unique: k.unique, Columns: strings.Join(k.cols, ", ")})
+		}
+		return out, nil
+	case SQLServer:
+		schemaVal := q.Schema
+		if schemaVal == "" {
+			schemaVal = "dbo"
+		}
+		rows, err := d.SQL.QueryContext(ctx, `
+SELECT i.name, i.is_unique, col.name
+FROM sys.indexes i
+JOIN sys.tables t ON i.object_id = t.object_id
+JOIN sys.schemas s ON t.schema_id = s.schema_id
+JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+JOIN sys.columns col ON ic.object_id = col.object_id AND ic.column_id = col.column_id
+WHERE t.name = @p1 AND s.name = @p2
+ORDER BY i.name, ic.key_ordinal`, q.Name, schemaVal)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		type key struct {
+			name   string
+			unique string
+			cols   []string
+		}
+		var order []string
+		byName := map[string]*key{}
+		for rows.Next() {
+			var name, col string
+			var isUnique bool
+			if err := rows.Scan(&name, &isUnique, &col); err != nil {
+				return nil, err
+			}
+			k, ok := byName[name]
+			if !ok {
+				u := "no"
+				if isUnique {
+					u = "yes"
+				}
+				k = &key{name: name, unique: u}
+				byName[name] = k
+				order = append(order, name)
+			}
+			k.cols = append(k.cols, col)
+		}
+		out := make([]Index, 0, len(order))
+		for _, n := range order {
+			k := byName[n]
+			out = append(out, Index{Name: k.name, Unique: k.unique, Columns: strings.Join(k.cols, ", ")})
+		}
+		return out, nil
+	case ClickHouse:
+		dbClause := "database = currentDatabase()"
+		var args []any
+		if q.Schema != "" {
+			dbClause = "database = ?"
+			args = append(args, q.Schema)
+		}
+		args = append(args, q.Name)
+		rows, err := d.SQL.QueryContext(ctx, fmt.Sprintf(`
+SELECT name, type, expr
+FROM system.data_skipping_indices
+WHERE %s AND table = ?
+ORDER BY name`, dbClause), args...)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var out []Index
+		for rows.Next() {
+			var name, typ, expr string
+			if err := rows.Scan(&name, &typ, &expr); err != nil {
+				return nil, err
+			}
+			out = append(out, Index{Name: name, Unique: "no", Columns: expr + " (" + typ + ")"})
 		}
 		return out, nil
 	default:
@@ -527,6 +825,9 @@ func (d *DB) sqliteIndexColumns(ctx context.Context, index string) (string, erro
 
 // Count returns the exact row count for one table.
 func (d *DB) Count(ctx context.Context, q QualTable) (int64, error) {
+	if d.Engine != nil {
+		return d.Engine.Count(ctx, q)
+	}
 	var n int64
 	qq := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, d.Driver.QuoteQual(q))
 	if err := d.SQL.QueryRowContext(ctx, qq).Scan(&n); err != nil {
@@ -544,21 +845,30 @@ func (d *DB) SampleRows(ctx context.Context, q QualTable, limit int) (*Sample, e
 // PageRows returns one page of rows: up to limit rows skipping offset.
 // LIMIT/OFFSET syntax is shared by postgres, mysql, and sqlite.
 func (d *DB) PageRows(ctx context.Context, q QualTable, limit, offset int) (*Sample, error) {
+	if d.Engine != nil {
+		return d.Engine.PageRows(ctx, q, limit, offset)
+	}
 	if limit <= 0 || limit > 1000 {
 		limit = 10
 	}
 	if offset < 0 {
 		offset = 0
 	}
-	qq := fmt.Sprintf(`SELECT * FROM %s LIMIT %d OFFSET %d`, d.Driver.QuoteQual(q), limit, offset)
+	var qq string
+	if d.Driver == SQLServer {
+		qq = fmt.Sprintf(`SELECT * FROM %s ORDER BY (SELECT NULL) OFFSET %d ROWS FETCH NEXT %d ROWS ONLY`, d.Driver.QuoteQual(q), offset, limit)
+	} else {
+		qq = fmt.Sprintf(`SELECT * FROM %s LIMIT %d OFFSET %d`, d.Driver.QuoteQual(q), limit, offset)
+	}
 	return d.queryToSample(ctx, qq)
 }
-
 // Query runs an arbitrary SELECT and captures up to 200 rows.
 func (d *DB) Query(ctx context.Context, q string) (*Sample, error) {
+	if d.Engine != nil {
+		return d.Engine.Query(ctx, q)
+	}
 	return d.queryToSample(ctx, q)
 }
-
 func (d *DB) queryToSample(ctx context.Context, q string) (*Sample, error) {
 	rows, err := d.SQL.QueryContext(ctx, q)
 	if err != nil {
