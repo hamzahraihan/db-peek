@@ -30,6 +30,9 @@ func (m Model) viewString() string {
 	if m.cellModal {
 		return m.cellModalView()
 	}
+	if m.historyModal {
+		return m.historyModalView()
+	}
 	switch m.screen {
 	case screenConns:
 		return m.connsView()
