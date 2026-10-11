@@ -13,6 +13,9 @@ type ForeignKey struct {
 }
 
 func (d *DB) ForeignKeys(ctx context.Context, q QualTable) ([]ForeignKey, error) {
+	if d.Engine != nil {
+		return d.Engine.ForeignKeys(ctx, q)
+	}
 	switch d.Driver {
 	case Postgres:
 		rows, err := d.SQL.QueryContext(ctx, `
@@ -40,12 +43,19 @@ ORDER BY 1, 2`, q.Name, q.Schema, q.Name, q.Schema)
 			out = append(out, fk)
 		}
 		return out, rows.Err()
-	case MySQL:
-		rows, err := d.SQL.QueryContext(ctx, `
+	case MySQL, MariaDB:
+		schemaClause := "TABLE_SCHEMA = DATABASE()"
+		var args []any
+		if q.Schema != "" {
+			schemaClause = "TABLE_SCHEMA = ?"
+			args = append(args, q.Schema)
+		}
+		args = append(args, q.Name, q.Name)
+		rows, err := d.SQL.QueryContext(ctx, fmt.Sprintf(`
 SELECT TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
 FROM information_schema.KEY_COLUMN_USAGE
-WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL
-AND (TABLE_NAME = ? OR REFERENCED_TABLE_NAME = ?) ORDER BY 1, 2`, q.Name, q.Name)
+WHERE %s AND REFERENCED_TABLE_NAME IS NOT NULL
+AND (TABLE_NAME = ? OR REFERENCED_TABLE_NAME = ?) ORDER BY 1, 2`, schemaClause), args...)
 		if err != nil {
 			return nil, err
 		}
@@ -59,6 +69,37 @@ AND (TABLE_NAME = ? OR REFERENCED_TABLE_NAME = ?) ORDER BY 1, 2`, q.Name, q.Name
 			out = append(out, fk)
 		}
 		return out, rows.Err()
+	case SQLServer:
+		schemaVal := q.Schema
+		if schemaVal == "" {
+			schemaVal = "dbo"
+		}
+		rows, err := d.SQL.QueryContext(ctx, `
+SELECT t1.name, c1.name, t2.name, c2.name
+FROM sys.foreign_keys fk
+JOIN sys.tables t1 ON fk.parent_object_id = t1.object_id
+JOIN sys.schemas s1 ON t1.schema_id = s1.schema_id
+JOIN sys.tables t2 ON fk.referenced_object_id = t2.object_id
+JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+JOIN sys.columns c1 ON fkc.parent_object_id = c1.object_id AND fkc.parent_column_id = c1.column_id
+JOIN sys.columns c2 ON fkc.referenced_object_id = c2.object_id AND fkc.referenced_column_id = c2.column_id
+WHERE (t1.name = @p1 OR t2.name = @p1) AND (s1.name = @p2 OR @p2 = '')
+ORDER BY 1, 2`, q.Name, schemaVal)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var out []ForeignKey
+		for rows.Next() {
+			var fk ForeignKey
+			if err := rows.Scan(&fk.FromTable, &fk.FromColumn, &fk.ToTable, &fk.ToColumn); err != nil {
+				return nil, err
+			}
+			out = append(out, fk)
+		}
+		return out, rows.Err()
+	case ClickHouse:
+		return nil, nil
 	default:
 		out, err := d.sqliteOutgoing(ctx, q.Name)
 		if err != nil {
