@@ -204,3 +204,43 @@ func (m *Model) sizeTables() {
 		m.queryTable.Resize(w, qh)
 	}
 }
+func (m *Model) queryPageCount() int {
+	if m.querySample == nil || len(m.querySample.Rows) == 0 {
+		return 1
+	}
+	pageSize := m.queryPageSize
+	if pageSize <= 0 {
+		pageSize = 50
+	}
+	return (len(m.querySample.Rows) + pageSize - 1) / pageSize
+}
+
+func (m *Model) rebuildQueryPage() {
+	if m.querySample == nil {
+		return
+	}
+	total := len(m.querySample.Rows)
+	if total == 0 {
+		m.queryTable.setData(m.querySample.Columns, nil)
+		m.sizeTables()
+		return
+	}
+	if m.queryPageSize <= 0 {
+		m.queryPageSize = 50
+	}
+	maxP := (total - 1) / m.queryPageSize
+	if m.queryPage > maxP {
+		m.queryPage = maxP
+	}
+	if m.queryPage < 0 {
+		m.queryPage = 0
+	}
+	start := m.queryPage * m.queryPageSize
+	end := start + m.queryPageSize
+	if end > total {
+		end = total
+	}
+	m.queryTable.setData(m.querySample.Columns, m.querySample.Rows[start:end])
+	m.queryTable.SetHeaderStyles(dataFieldHeaderStyle, dimFieldHeaderStyle)
+	m.sizeTables()
+}
