@@ -54,9 +54,9 @@ SQLite paths must exist; nothing is auto-created.
 |-------|------|
 | Global | `q` quit, `tab` pane, `?` help, `esc` cancel query |
 | Sidebar | `/` filter, `enter` preview, `left/right` collapse/expand, `r` refresh, `c` connections |
-| Detail | `1-5` schema/indexes/rows/query/er, `n/p` page, `s` size, `g/G` top/bottom, `,/.` column, `o` sort page, `/` find, `d` copy DDL, `e` edit cell, `E` export |
-| Query editor | `ctrl+r/F5` run (selection, else statement at cursor), `ctrl+e/ctrl+y` explain, `ctrl+p/n` history, `ctrl+t` new buf, `ctrl+w` close, `ctrl+d` del line, `ctrl+o` open `.sql`, `F2` save `.sql` |
-| Results | `H/L` buf, `t/X` new/close, `o` sort page, `/` find |
+| Detail | `1-5` schema/indexes/rows/query/er, `n/p` page, `s` size, `g/G` top/bottom, `,/.` column, `y/Y` yank cell/row, `F` filter cell, `v` view modal, `o` sort page, `/` find, `d` copy DDL, `e` edit cell, `E` export |
+| Query editor | `ctrl+r/F5` run (selection, else statement at cursor), `ctrl+e/ctrl+y` explain, `ctrl+p/n` history, `ctrl+h` search history, `ctrl+t` new buf, `ctrl+w` close, `ctrl+d` del line, `ctrl+o` open `.sql`, `F2` save `.sql` |
+| Results | `H/L` buf, `t/X` new/close, `n/p` page, `s` size, `y/Y` yank cell/row, `F` filter cell, `v` view modal, `o` sort page, `/` find |
 | Connections | `a/e/d` add/edit/forget, `enter` connect |
 
 ## Saved connections
