@@ -88,6 +88,10 @@ func Load() (*Store, error) {
 		}
 		return nil, err
 	}
+	decrypted, derr := decryptPayload(data)
+	if derr == nil {
+		data = decrypted
+	}
 	var profiles []Profile
 	if err := json.Unmarshal(data, &profiles); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", p, err)
@@ -168,7 +172,11 @@ func (s *Store) persist(next []Profile) error {
 	if err != nil {
 		return err
 	}
-	if err := writeAtomic(s.Path, append(data, '\n'), 0o600); err != nil {
+	payload, eerr := encryptPayload(append(data, '\n'))
+	if eerr != nil {
+		payload = append(data, '\n')
+	}
+	if err := writeAtomic(s.Path, payload, 0o600); err != nil {
 		return err
 	}
 	s.profiles = next
