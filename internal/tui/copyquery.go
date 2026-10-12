@@ -272,8 +272,11 @@ func (m *Model) quickFilterCell() string {
 		}
 	}
 
-	if g == nil || val == "" || val == "NULL" {
+	if g == nil || val == "" {
 		return "cannot filter empty cell"
+	}
+	if val == "NULL" {
+		return "cannot filter NULL cell"
 	}
 	g.SetFilter(val)
 	m.gridFilterInput.SetValue(val)
