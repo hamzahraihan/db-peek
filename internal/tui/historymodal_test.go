@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	dbpkg "db-peek/internal/db"
 	"db-peek/internal/saved"
 )
 
@@ -83,11 +84,71 @@ func TestHistoryModalCopy(t *testing.T) {
 
 	u, _ := m.Update(testKey("ctrl+h"))
 	m = u.(Model)
-	status := m.copySelectedHistory()
+	u, _ = m.Update(testKey("ctrl+y"))
+	m = u.(Model)
 	if !strings.Contains(copied, "SELECT secret FROM vault") {
-		t.Fatalf("expected copied query, got %q", copied)
+		t.Fatalf("expected copied query via ctrl+y, got %q", copied)
 	}
-	if !strings.Contains(status, "copied") {
-		t.Fatalf("expected copy status, got %q", status)
+	if !strings.Contains(m.status, "copied") {
+		t.Fatalf("expected copy status, got %q", m.status)
+	}
+}
+
+func TestHistoryModalClampOffsetOnFilterShrink(t *testing.T) {
+	m := queryTabModel()
+	m.tab = 3
+	m.height = 14 // budget = 4
+	m.connStr = "postgres://localhost/testdb"
+	m.history = &saved.History{}
+	for i := range 10 {
+		m.history.Add(strings.Repeat("SELECT ", i+1), saved.Mask(m.connStr))
+	}
+	m.history.Add("SPECIAL QUERY", saved.Mask(m.connStr))
+
+	u, _ := m.Update(testKey("ctrl+h"))
+	m = u.(Model)
+
+	// Move down past initial budget so offset > 0
+	for range 8 {
+		u, _ = m.Update(testKey("down"))
+		m = u.(Model)
+	}
+	if m.historyOffset == 0 {
+		t.Fatalf("expected historyOffset > 0, got %d", m.historyOffset)
+	}
+
+	// Now filter to a single query
+	m.historyFilterInput.SetValue("SPECIAL")
+	m.rebuildHistoryFiltered()
+	if len(m.historyFiltered) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(m.historyFiltered))
+	}
+	if m.historyOffset > m.historyCursor {
+		t.Fatalf("historyOffset (%d) must not exceed historyCursor (%d)", m.historyOffset, m.historyCursor)
+	}
+	if m.historyOffset != 0 {
+		t.Fatalf("expected historyOffset to be clamped to 0, got %d", m.historyOffset)
+	}
+}
+
+func TestQuickFilterCellStatus(t *testing.T) {
+	m := queryTabModel()
+	m.tab = 2
+	// With empty sample, quick filter should report empty cell
+	st := m.quickFilterCell()
+	if st != "cannot filter empty cell" {
+		t.Fatalf("expected 'cannot filter empty cell', got %q", st)
+	}
+
+	// With NULL cell selected
+	m.sample = &dbpkg.Sample{
+		Columns: []string{"id", "val"},
+		Rows:    [][]string{{"1", "NULL"}},
+	}
+	m.rowTable.setData(m.sample.Columns, m.sample.Rows)
+	m.rowTable.MoveColRight()
+	st = m.quickFilterCell()
+	if st != "cannot filter NULL cell" {
+		t.Fatalf("expected 'cannot filter NULL cell', got %q", st)
 	}
 }
