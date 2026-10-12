@@ -60,6 +60,9 @@ func (m *Model) clampHistoryOffset() {
 	if m.historyCursor >= m.historyOffset+budget {
 		m.historyOffset = m.historyCursor - budget + 1
 	}
+	if m.historyOffset > m.historyCursor {
+		m.historyOffset = m.historyCursor
+	}
 	if m.historyOffset < 0 {
 		m.historyOffset = 0
 	}
@@ -176,7 +179,7 @@ func (m Model) historyModalView() string {
 
 	b.WriteString(dimStyle.Render(strings.Repeat("─", innerW)))
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render(" ↑/↓ / ctrl+p/n: move • enter: load • y: copy • esc: close "))
+	b.WriteString(dimStyle.Render(" ↑/↓ / ctrl+p/n: move • enter: load • ctrl+y: copy • esc: close "))
 
 	box := paneBorder(true).Render(b.String())
 	boxLines := strings.Split(box, "\n")
