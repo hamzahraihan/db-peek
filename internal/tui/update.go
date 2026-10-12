@@ -660,6 +660,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			m.selectHistoryEntry()
 			return m, nil
+		case "ctrl+y":
+			m.status = m.copySelectedHistory()
+			return m, nil
 		case "up", "ctrl+p":
 			if m.historyCursor > 0 {
 				m.historyCursor--
