@@ -1,7 +1,7 @@
 package tui
 
-// Mouse diagnostics, off by default. Set DBPEEK_MOUSE_DEBUG=1 to append
-// one line per mouse event to %TEMP%/db-peek-mouse.log, showing exactly
+// Mouse diagnostics, off by default. Set PEEKERDB_MOUSE_DEBUG=1 (or legacy DBPEEK_MOUSE_DEBUG=1)
+// to append one line per mouse event to %TEMP%/peekerdb-mouse.log, showing exactly
 // what the terminal delivered and how the app resolved it.
 
 import (
@@ -11,10 +11,10 @@ import (
 	"sync"
 )
 
-var mouseDebug = os.Getenv("DBPEEK_MOUSE_DEBUG") != ""
+var mouseDebug = os.Getenv("PEEKERDB_MOUSE_DEBUG") != "" || os.Getenv("DBPEEK_MOUSE_DEBUG") != ""
 var mouseLogMu sync.Mutex
 
-func mouseLogPath() string { return filepath.Join(os.TempDir(), "db-peek-mouse.log") }
+func mouseLogPath() string { return filepath.Join(os.TempDir(), "peekerdb-mouse.log") }
 
 func logMouse(format string, args ...any) {
 	if !mouseDebug {
