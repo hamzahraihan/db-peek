@@ -11,7 +11,7 @@ import (
 
 	"github.com/atotto/clipboard"
 
-	"db-peek/internal/saved"
+	"peekerdb/internal/saved"
 )
 
 // Copy-query support: the TUI captures the mouse, so terminal text
@@ -32,7 +32,7 @@ var userCacheDir = os.UserCacheDir
 // queryDumpText formats the editor SQL and last error for pasting.
 func queryDumpText(sql, errStr string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "-- db-peek query dump %s\n", time.Now().Format(time.RFC3339))
+	fmt.Fprintf(&b, "-- peekerdb query dump %s\n", time.Now().Format(time.RFC3339))
 	b.WriteString(sql + "\n")
 	if strings.TrimSpace(errStr) != "" {
 		b.WriteString("-- error:\n" + strings.TrimSpace(errStr) + "\n")
@@ -41,7 +41,7 @@ func queryDumpText(sql, errStr string) string {
 }
 
 // copyQueryDump copies the dump; on clipboard failure it writes
-// db-peek-debug.txt in the working directory instead. It reports the
+// peekerdb-debug.txt in the working directory instead. It reports the
 // human status line for the caller to display. It never panics: NUL bytes
 // (fatal to the Windows clipboard API) are stripped, and a panicking
 // clipboard backend falls through to the file fallback.
@@ -95,7 +95,7 @@ func writeQueryDumpFile(text string) string {
 	if err != nil {
 		dir = os.TempDir()
 	}
-	dir = filepath.Join(dir, "db-peek")
+	dir = filepath.Join(dir, "peekerdb")
 	path := filepath.Join(dir, "last-dump.txt")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "copy failed: " + err.Error()
