@@ -1,7 +1,7 @@
-# db-peek
+# peekerdb
 
-[![CI](https://github.com/hamzahraihan/db-peek/actions/workflows/ci.yml/badge.svg)](https://github.com/hamzahraihan/db-peek/actions)
-[![Release](https://github.com/hamzahraihan/db-peek/actions/workflows/release.yml/badge.svg)](https://github.com/hamzahraihan/db-peek/actions)
+[![CI](https://github.com/hamzahraihan/peekerDB/actions/workflows/ci.yml/badge.svg)](https://github.com/hamzahraihan/peekerDB/actions)
+[![Release](https://github.com/hamzahraihan/peekerDB/actions/workflows/release.yml/badge.svg)](https://github.com/hamzahraihan/peekerDB/actions)
 ![Go 1.26+](https://img.shields.io/badge/go-1.26+-blue)
 
 Peek at Postgres, MySQL, MariaDB, SQL Server, ClickHouse, Redis, MongoDB, and SQLite from the terminal. Interactive TUI plus one-shot CLI (`--list --schema --rows --query`).
@@ -9,9 +9,9 @@ Peek at Postgres, MySQL, MariaDB, SQL Server, ClickHouse, Redis, MongoDB, and SQ
 ## Install
 
 ```sh
-go install github.com/hamzahraihan/db-peek@latest
-# or download db-peek_<os>_<arch>.zip/tar.gz + checksums.txt from a v* release
-go build -o db-peek .
+go install github.com/hamzahraihan/peekerDB@latest
+# or download peekerdb_<os>_<arch>.zip/tar.gz + checksums.txt from a v* release
+go build -o peekerdb .
 ```
 
 Requires Go 1.26+ for source builds.
@@ -19,12 +19,12 @@ Requires Go 1.26+ for source builds.
 ## Quickstart
 
 ```sh
-db-peek ./ecommerce.db
-db-peek "postgres://user:pass@localhost:5432/db" --list
-DATABASE_URL=postgres://user:pass@localhost:5432/db db-peek --list
-db-peek ./ecommerce.db --rows users --limit 20 --offset 0
-db-peek ./ecommerce.db --schema users
-db-peek ./ecommerce.db --query "SELECT 1"
+peekerdb ./ecommerce.db
+peekerdb "postgres://user:pass@localhost:5432/db" --list
+DATABASE_URL=postgres://user:pass@localhost:5432/db peekerdb --list
+peekerdb ./ecommerce.db --rows users --limit 20 --offset 0
+peekerdb ./ecommerce.db --schema users
+peekerdb ./ecommerce.db --query "SELECT 1"
 ```
 
 Conn forms: `postgres://...` | `mysql://...` | `mariadb://...` | `sqlserver://...` | `clickhouse://...` | `redis://...` | `mongodb://...` | `./app.db` | `:memory:` | `sqlite://path`.
@@ -61,7 +61,7 @@ SQLite paths must exist; nothing is auto-created.
 
 ## Saved connections
 
-Stored under the OS config dir (`db-peek/connections.json`, file `0600`); passwords masked in display. History and session restore automatically.
+Stored under the OS config dir (`peekerdb/connections.json`, file `0600`); passwords masked in display. History and session restore automatically.
 
 ## Export
 
