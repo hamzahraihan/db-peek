@@ -43,18 +43,18 @@ func (m Model) viewString() string {
 	}
 }
 
-// fitHeader renders "db-peek <status>" truncated to the terminal width.
+// fitHeader renders "peekerdb <status>" truncated to the terminal width.
 // The header must stay one row: wrapping would shift every mouse row below.
 func (m Model) fitHeader() string {
-	title := "db-peek "
+	title := "peekerdb "
 	if m.readOnly {
-		title = "db-peek [read-only] "
+		title = "peekerdb [read-only] "
 	}
 	status := m.status
 	if m.width > 0 {
 		status = fitText(status, m.width-lipgloss.Width(title))
 	}
-	return titleStyle.Render("db-peek") + " " + dimStyle.Render(status)
+	return titleStyle.Render("peekerdb") + " " + dimStyle.Render(status)
 }
 
 // sideBoxTop is the terminal row of both pane top borders (just below header).

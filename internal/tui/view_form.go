@@ -9,9 +9,9 @@ import (
 func (m Model) formView() string {
 	var b strings.Builder
 	if m.editing == "" {
-		b.WriteString(titleStyle.Render("db-peek — new connection") + "\n\n")
+		b.WriteString(titleStyle.Render("peekerdb — new connection") + "\n\n")
 	} else {
-		b.WriteString(titleStyle.Render("db-peek — edit "+m.editing) + "\n\n")
+		b.WriteString(titleStyle.Render("peekerdb — edit "+m.editing) + "\n\n")
 	}
 	b.WriteString(fieldLabel("name", m.formFocus == 0) + "\n")
 	b.WriteString(m.nameInput.View() + "\n\n")
