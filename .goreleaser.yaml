@@ -2,7 +2,7 @@ version: 2
 
 builds:
   - main: .
-    binary: db-peek
+    binary: peekerdb
     goos: [linux, windows, darwin]
     goarch: [amd64, arm64]
     ldflags:
