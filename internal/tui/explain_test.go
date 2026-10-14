@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	dbpkg "db-peek/internal/db"
+	dbpkg "peekerdb/internal/db"
 )
 
 // ctrl+e runs the buffer through EXPLAIN without rewriting the editor,

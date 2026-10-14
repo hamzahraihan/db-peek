@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"db-peek/internal/db"
-	"db-peek/internal/saved"
+	"peekerdb/internal/db"
+	"peekerdb/internal/saved"
 )
 
 // Switching connections must not leak the previous database's UI state:

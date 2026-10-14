@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
-	dbpkg "db-peek/internal/db"
+	dbpkg "peekerdb/internal/db"
 )
 
 func TestNewBufferPreservesCurrentText(t *testing.T) {

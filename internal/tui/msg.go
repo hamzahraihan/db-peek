@@ -1,6 +1,6 @@
 package tui
 
-import dbpkg "db-peek/internal/db"
+import dbpkg "peekerdb/internal/db"
 
 // Messages are the events Update reacts to. Async DB work reports back
 // through these; every other branch of Update is a state transition.

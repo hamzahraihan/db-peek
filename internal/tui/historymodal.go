@@ -7,7 +7,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/lipgloss/v2"
 
-	"db-peek/internal/saved"
+	"peekerdb/internal/saved"
 )
 
 func (m *Model) openHistoryModal() bool {

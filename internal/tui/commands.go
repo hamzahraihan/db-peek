@@ -10,8 +10,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	dbpkg "db-peek/internal/db"
-	"db-peek/internal/saved"
+	dbpkg "peekerdb/internal/db"
+	"peekerdb/internal/saved"
 )
 
 // newOpContext cancels any in-flight command and returns a fresh bounded

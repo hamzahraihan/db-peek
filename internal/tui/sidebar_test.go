@@ -8,8 +8,8 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"db-peek/internal/db"
-	"db-peek/internal/saved"
+	"peekerdb/internal/db"
+	"peekerdb/internal/saved"
 )
 
 var errTestCount = errors.New("count failed")

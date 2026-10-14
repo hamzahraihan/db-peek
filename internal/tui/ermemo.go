@@ -5,7 +5,7 @@ package tui
 // canvas is therefore cached across frames and keyed on the inputs that
 // can change it; panning and clipping stay per frame.
 
-import dbpkg "db-peek/internal/db"
+import dbpkg "peekerdb/internal/db"
 
 // genPosKey covers everything the layouts depend on: the schema data
 // generation, whether the focused subset is used, its center, and the

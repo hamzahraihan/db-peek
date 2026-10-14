@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	dbpkg "db-peek/internal/db"
-	"db-peek/internal/saved"
+	dbpkg "peekerdb/internal/db"
+	"peekerdb/internal/saved"
 )
 
 func TestHistoryModalWorkflow(t *testing.T) {

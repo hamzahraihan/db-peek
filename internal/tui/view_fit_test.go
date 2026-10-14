@@ -6,7 +6,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	dbpkg "db-peek/internal/db"
+	dbpkg "peekerdb/internal/db"
 )
 
 // A wrapped line pushes every row below it down, silently desyncing mouse

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"db-peek/internal/saved"
+	"peekerdb/internal/saved"
 )
 
 func sessionStore(t *testing.T, name, conn string) *saved.Store {

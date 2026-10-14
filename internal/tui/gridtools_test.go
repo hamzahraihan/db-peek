@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	dbpkg "db-peek/internal/db"
+	dbpkg "peekerdb/internal/db"
 )
 
 func TestGridYankCellAndRow(t *testing.T) {

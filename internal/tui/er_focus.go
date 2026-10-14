@@ -7,7 +7,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	dbpkg "db-peek/internal/db"
+	dbpkg "peekerdb/internal/db"
 )
 
 // erIsFocused reports whether the diagram should show the 1-hop focused

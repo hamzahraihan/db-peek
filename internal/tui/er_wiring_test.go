@@ -6,7 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"db-peek/internal/db"
+	"peekerdb/internal/db"
 )
 
 // Entering the ER tab issues two commands — the per-table FK load and the

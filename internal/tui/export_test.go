@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	dbpkg "db-peek/internal/db"
+	dbpkg "peekerdb/internal/db"
 )
 
 func exportModel(t *testing.T) Model {

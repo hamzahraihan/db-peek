@@ -8,7 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"db-peek/internal/saved"
+	"peekerdb/internal/saved"
 )
 
 // maskedConn is the key history is grouped by. It is the Mask()ed conn
