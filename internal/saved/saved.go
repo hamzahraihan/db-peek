@@ -26,13 +26,13 @@ type Store struct {
 	pathErr  error // why Path is empty, when the config dir was unavailable
 }
 
-// DefaultDir is the directory db-peek keeps all of its state in.
+// DefaultDir is the directory peekerdb keeps all of its state in.
 func DefaultDir() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "db-peek"), nil
+	return filepath.Join(dir, "peekerdb"), nil
 }
 
 func DefaultPath() (string, error) {
