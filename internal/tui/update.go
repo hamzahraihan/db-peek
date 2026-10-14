@@ -13,7 +13,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	dbpkg "db-peek/internal/db"
+	dbpkg "peekerdb/internal/db"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -188,7 +188,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.loadCounts(ctx, s.Name, names))
 		}
 		// A restored session wins over "open the first table": the user
-		// left db-peek on that table, tab and filter last time.
+		// left peekerdb on that table, tab and filter last time.
 		if m.restoreFilter != "" {
 			// The search field is always on screen, so a restored filter
 			// has to live in the input as well as in the tree.
