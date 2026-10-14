@@ -1,6 +1,6 @@
 package tui
 
-// Session restore: db-peek writes session.json on quit and reads it back
+// Session restore: peekerdb writes session.json on quit and reads it back
 // on the next launch. Only a saved profile *name* is recorded, so no new
 // secret reaches disk; an ad-hoc connection restores nothing
 // connection-wise and the picker opens as usual.
@@ -8,7 +8,7 @@ package tui
 import (
 	"strings"
 
-	"db-peek/internal/saved"
+	"peekerdb/internal/saved"
 )
 
 // loadSessionFunc is a seam for tests, which must never read the
