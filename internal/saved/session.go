@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-// Session is the state db-peek restores on the next launch. It records the
+// Session is the state peekerdb restores on the next launch. It records the
 // saved profile *name*, never the connection string, so no new secret is
 // written to disk; an ad-hoc connection restores nothing connection-wise.
 type Session struct {
