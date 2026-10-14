@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"db-peek/internal/saved"
+	"peekerdb/internal/saved"
 )
 
 var errTestClipboard = errors.New("no clipboard")
@@ -31,7 +31,7 @@ func TestCopyQueryFallsBackToFile(t *testing.T) {
 	m.editor.SetText("SELECT ord")
 	m.err = "invalid message format (SQLSTATE 08P01)"
 	status := m.copyQueryDump()
-	path := filepath.Join(dir, "db-peek", "last-dump.txt")
+	path := filepath.Join(dir, "peekerdb", "last-dump.txt")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("fallback file must exist: %v (status %q)", err, status)
@@ -147,7 +147,7 @@ func TestCopyQuerySurvivesClipboardPanic(t *testing.T) {
 	m := queryTabModel()
 	m.editor.SetText("SELECT 1")
 	status := m.copyQueryDump()
-	if _, err := os.Stat(filepath.Join(dir, "db-peek", "last-dump.txt")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "peekerdb", "last-dump.txt")); err != nil {
 		t.Fatalf("panic must fall back to file, status %q: %v", status, err)
 	}
 }
