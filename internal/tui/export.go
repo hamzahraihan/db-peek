@@ -11,7 +11,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 
-	"db-peek/internal/export"
+	"peekerdb/internal/export"
 )
 
 // exportTarget is the result set the export overlay applies to.
@@ -40,7 +40,7 @@ func (m *Model) startExport() {
 	m.exportInput.Prompt = "export → "
 	m.exportInput.CharLimit = 200
 	m.exportInput.SetWidth(m.paneW())
-	m.exportInput.SetValue(fmt.Sprintf("./db-peek-%s%s", sanitizeFileStem(name), ext))
+	m.exportInput.SetValue(fmt.Sprintf("./peekerdb-%s%s", sanitizeFileStem(name), ext))
 	m.exportInput.CursorEnd()
 	m.exportInput.Focus()
 }
