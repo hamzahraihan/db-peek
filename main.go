@@ -1,14 +1,14 @@
-// Command db-peek inspects a database from the terminal.
+// Command peekerdb inspects a database from the terminal.
 //
 //	Usage:
-//	  db-peek [conn|name]            interactive TUI (connection picker when empty)
-//	  db-peek [conn|name] --list     print table names
-//	  db-peek [conn|name] --schema TABLE  print columns + indexes
-//	  db-peek [conn|name] --rows TABLE    print first N rows (see --limit)
-//	  db-peek [conn|name] --query SQL     run a SELECT and print up to 200 rows
-//	  db-peek --conns                list saved connections
-//	  db-peek --save NAME [conn]     save the connection as NAME
-//	  db-peek --forget NAME          delete a saved connection
+//	  peekerdb [conn|name]            interactive TUI (connection picker when empty)
+//	  peekerdb [conn|name] --list     print table names
+//	  peekerdb [conn|name] --schema TABLE  print columns + indexes
+//	  peekerdb [conn|name] --rows TABLE    print first N rows (see --limit)
+//	  peekerdb [conn|name] --query SQL     run a SELECT and print up to 200 rows
+//	  peekerdb --conns                list saved connections
+//	  peekerdb --save NAME [conn]     save the connection as NAME
+//	  peekerdb --forget NAME          delete a saved connection
 //
 //	Conn forms: postgres://... | mysql://... | mariadb://... | sqlserver://... | clickhouse://... | redis://... | mongodb://... | ./app.db | :memory: | sqlite://path
 //	A bare NAME matching a saved connection resolves to it. Env DATABASE_URL
@@ -23,13 +23,13 @@ import (
 	"strings"
 	"time"
 
-	dbpkg "db-peek/internal/db"
-	"db-peek/internal/saved"
-	"db-peek/internal/tui"
+	dbpkg "peekerdb/internal/db"
+	"peekerdb/internal/saved"
+	"peekerdb/internal/tui"
 )
 
 // appVersion identifies the build; bump on user-visible changes so stale
-// binaries (e.g. a project-local db-peek.exe shadowing the install) are
+// binaries (e.g. a project-local peekerdb.exe shadowing the install) are
 // diagnosable via --version. Overridden at release time via
 // -ldflags "-X main.appVersion={{.Version}}"; default is dev fallback.
 var appVersion = "0.6.0"
@@ -50,16 +50,16 @@ func main() {
 		roF      = flag.Bool("read-only", false, "refuse writes and cell edits (SELECT/reads only)")
 	)
 	flag.Usage = func() {
-		fmt.Fprint(os.Stderr, `db-peek — peek at databases from the terminal
+		fmt.Fprint(os.Stderr, `peekerdb — peek at databases from the terminal
 
 Usage:
-  db-peek [conn|name]            interactive TUI (picker when empty)
-  db-peek [conn|name] --list     print table names
-  db-peek [conn|name] --rows TABLE    print N rows (--limit, --offset)
-  db-peek [conn|name] --query SQL     run a SELECT, print up to 200 rows
-  db-peek --conns                list saved connections
-  db-peek --save NAME [conn]     save the connection as NAME
-  db-peek --forget NAME          delete a saved connection
+  peekerdb [conn|name]            interactive TUI (picker when empty)
+  peekerdb [conn|name] --list     print table names
+  peekerdb [conn|name] --rows TABLE    print N rows (--limit, --offset)
+  peekerdb [conn|name] --query SQL     run a SELECT, print up to 200 rows
+  peekerdb --conns                list saved connections
+  peekerdb --save NAME [conn]     save the connection as NAME
+  peekerdb --forget NAME          delete a saved connection
 
 Conn: postgres://... | mysql://... | mariadb://... | sqlserver://... | clickhouse://... | redis://... | mongodb://... | ./app.db | :memory: | sqlite://path
 or a saved NAME. Env DATABASE_URL fills conn when no argument is given.
@@ -67,7 +67,7 @@ or a saved NAME. Env DATABASE_URL fills conn when no argument is given.
 `)
 		flag.PrintDefaults()
 	}
-	// Accept `db-peek [conn] --flags` as well as `db-peek --flags [conn]`:
+	// Accept `peekerdb [conn] --flags` as well as `peekerdb --flags [conn]`:
 	// the std flag package stops parsing at the first positional, so hoist a
 	// leading conn argument out before parsing.
 	connArg := ""
@@ -78,13 +78,13 @@ or a saved NAME. Env DATABASE_URL fills conn when no argument is given.
 	flag.Parse()
 
 	if *versionF {
-		fmt.Println("db-peek " + appVersion)
+		fmt.Println("peekerdb " + appVersion)
 		return
 	}
 
 	store, err := saved.Load()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "db-peek: warning: saved connections unavailable:", err)
+		fmt.Fprintln(os.Stderr, "peekerdb: warning: saved connections unavailable:", err)
 		store = saved.New()
 	}
 
@@ -120,7 +120,7 @@ or a saved NAME. Env DATABASE_URL fills conn when no argument is given.
 	}
 	if *saveF != "" {
 		if conn == "" {
-			fmt.Fprintln(os.Stderr, "db-peek: --save needs a connection: db-peek --save NAME [conn]")
+			fmt.Fprintln(os.Stderr, "peekerdb: --save needs a connection: peekerdb --save NAME [conn]")
 			os.Exit(2)
 		}
 		if err := store.Upsert(*saveF, conn); err != nil {
@@ -133,14 +133,14 @@ or a saved NAME. Env DATABASE_URL fills conn when no argument is given.
 	oneShot := *listF || *schemaF != "" || *rowsF != "" || *queryF != ""
 	if !oneShot {
 		if err := tui.Run(conn, store, *roF); err != nil {
-			fmt.Fprintln(os.Stderr, "db-peek:", err)
+			fmt.Fprintln(os.Stderr, "peekerdb:", err)
 			os.Exit(1)
 		}
 		return
 	}
 
 	if conn == "" {
-		fmt.Fprintln(os.Stderr, "db-peek: need a connection string: db-peek [conn] --list")
+		fmt.Fprintln(os.Stderr, "peekerdb: need a connection string: peekerdb [conn] --list")
 		os.Exit(2)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -257,7 +257,7 @@ func colRows(cols []dbpkg.Column) [][]string {
 }
 
 func fatal(err error) {
-	fmt.Fprintln(os.Stderr, "db-peek:", err)
+	fmt.Fprintln(os.Stderr, "peekerdb:", err)
 	os.Exit(1)
 }
 
