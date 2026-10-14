@@ -11,7 +11,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"db-peek/internal/saved"
+	"peekerdb/internal/saved"
 )
 
 // Run starts the fullscreen TUI. An empty connStr opens the saved
@@ -19,7 +19,7 @@ import (
 // writes and cell edits with a status note.
 func Run(connStr string, store *saved.Store, readOnly bool) error {
 	if mouseDebug {
-		fmt.Fprintln(os.Stderr, "db-peek: mouse debug log →", mouseLogPath())
+		fmt.Fprintln(os.Stderr, "peekerdb: mouse debug log →", mouseLogPath())
 	}
 	m := New(connStr, store)
 	m.readOnly = readOnly
