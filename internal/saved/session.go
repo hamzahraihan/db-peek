@@ -18,7 +18,7 @@ type Session struct {
 	Filter      string   `json:"filter,omitempty"`
 	Buffers     []string `json:"buffers,omitempty"` // editor text per query buffer
 	Cur         int      `json:"cur,omitempty"`
-
+	Theme       string   `json:"theme,omitempty"`
 	// path overrides the default location; empty means the config dir.
 	path string
 }

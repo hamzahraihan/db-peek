@@ -21,6 +21,9 @@ func (m *Model) applySession(sess *saved.Session) {
 	if sess == nil {
 		return
 	}
+	if sess.Theme != "" {
+		m.applyTheme(sess.Theme)
+	}
 	if m.connStr == "" {
 		m.connStr = m.restoreConn(sess)
 	}
@@ -88,6 +91,7 @@ func (m Model) fillSession(sess *saved.Session) {
 	sess.PageSize = m.pageSize
 	sess.Filter = m.explorer.Filter
 	sess.Cur = m.qcur
+	sess.Theme = m.theme
 	sess.ConnMasked = saved.Mask(m.connStr)
 	sess.ConnProfile = m.profileNameFor(m.connStr)
 	bufs := m.qbufs
