@@ -216,15 +216,90 @@ func renderStatus(text string, w int) string {
 func editorPanelBorder(focused bool) lipgloss.Style {
 	s := lipgloss.NewStyle().Border(lipgloss.RoundedBorder())
 	if focused {
-		return s.BorderForeground(lipgloss.Color("#EAB308"))
+		return s.BorderForeground(lipgloss.Color(CurrentTheme.Palette.BorderActive))
 	}
-	return s.BorderForeground(lipgloss.Color("#3A3A3A"))
+	return s.BorderForeground(lipgloss.Color(CurrentTheme.Palette.BorderInactive))
 }
 
 func paneBorder(focused bool) lipgloss.Style {
 	s := lipgloss.NewStyle().Border(lipgloss.RoundedBorder())
 	if focused {
-		return s.BorderForeground(lipgloss.Color("#EAB308"))
+		return s.BorderForeground(lipgloss.Color(CurrentTheme.Palette.BorderActive))
 	}
-	return s.BorderForeground(lipgloss.Color("#3A3A3A"))
+	return s.BorderForeground(lipgloss.Color(CurrentTheme.Palette.BorderInactive))
+}
+
+// applyPalette reconfigures all lipgloss styles to match p.
+func applyPalette(p Palette) {
+	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.DataHeaderFg))
+	dimStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.TextMuted))
+	errStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.Error)).Bold(true)
+	activeTab = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.ActiveTabFg)).Background(lipgloss.Color(p.ActiveTabBg)).Padding(0, 2)
+	inactiveTab = lipgloss.NewStyle().Foreground(lipgloss.Color(p.InactiveTabFg)).Background(lipgloss.Color(p.InactiveTabBg)).Padding(0, 2)
+	activeBuf = lipgloss.NewStyle().Bold(true).Underline(true).Foreground(lipgloss.Color(p.Primary))
+	hoverTab = lipgloss.NewStyle().Underline(true).Bold(true).Foreground(lipgloss.Color(p.HoverTabFg)).Background(lipgloss.Color(p.HoverTabBg)).Padding(0, 2)
+	selTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.SelTitleFg)).Background(lipgloss.Color(p.SelTitleBg)).Padding(0, 1)
+	selDesc = lipgloss.NewStyle().Foreground(lipgloss.Color(p.SelDescFg)).Background(lipgloss.Color(p.SelDescBg)).Padding(0, 1)
+
+	dataHeaderStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.DataHeaderFg))
+	dataHeaderBorder = lipgloss.NewStyle().Foreground(lipgloss.Color(p.DataHeaderBorder))
+	dataSelectedStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.DataSelFg)).Background(lipgloss.Color(p.DataSelBg))
+	dataHoverStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.DataHoverFg)).Background(lipgloss.Color(p.DataHoverBg))
+	zebraStyle = lipgloss.NewStyle().Background(lipgloss.Color(p.ZebraBg))
+	zebraDimStyle = lipgloss.NewStyle().Background(lipgloss.Color(p.ZebraDimBg))
+
+	dataFieldHeaderStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.Text))
+	colFieldStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.Text))
+	colTypeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.Secondary))
+	colMetaStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.TextMuted))
+	colPKStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.Primary))
+	colUniqueYesStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.Success))
+	colUniqueNoStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.TextMuted))
+
+	dimTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.TextMuted))
+	dimActiveTabStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.InactiveTabFg)).Background(lipgloss.Color(p.InactiveTabBg)).Padding(0, 2)
+	dimDataHeaderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.TextMuted))
+	dimDataSelectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.TextMuted)).Background(lipgloss.Color(p.InactiveTabBg))
+	dimFieldHeaderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.TextDimField))
+	dimColFieldStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.TextDimField))
+	dimColTypeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.TextMuted))
+	dimColMetaStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.TextMuted))
+	dimColPKStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.TextMuted))
+	dimColUniqueStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.TextMuted))
+
+	completeBoxStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(p.Primary)).
+		Background(lipgloss.Color(p.InactiveTabBg)).
+		Padding(0, 1)
+
+	explorerTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.ExplorerTitle))
+	explorerSel = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.ExplorerSelFg)).Background(lipgloss.Color(p.ExplorerSelBg))
+	explorerType = lipgloss.NewStyle().Foreground(lipgloss.Color(p.ExplorerType))
+	explorerCount = lipgloss.NewStyle().Foreground(lipgloss.Color(p.ExplorerCount))
+	explorerConn = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.Text))
+	explorerCol = lipgloss.NewStyle().Foreground(lipgloss.Color(p.Text))
+	explorerPK = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.Primary))
+	explorerFK = lipgloss.NewStyle().Foreground(lipgloss.Color(p.Secondary))
+	scrollTrackStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.TextMuted))
+	scrollThumbStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.Text))
+
+	footKeyStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.Text))
+	footDescStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.TextMuted))
+	statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.TextDimField))
+
+	helpHeaderStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.Primary))
+	helpKeyStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.Secondary))
+	helpDescStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.TextMuted))
+	helpTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.Text))
+
+	sqlKeyword = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.SQLKeyword))
+	sqlString = lipgloss.NewStyle().Foreground(lipgloss.Color(p.SQLString))
+	sqlNumber = lipgloss.NewStyle().Foreground(lipgloss.Color(p.SQLNumber))
+	sqlComment = lipgloss.NewStyle().Foreground(lipgloss.Color(p.SQLComment))
+	sqlPlain = lipgloss.NewStyle().Foreground(lipgloss.Color(p.SQLPlain))
+
+	erPKFieldStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.Text))
+	erLinkStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(p.ERLink))
+	erPKTagStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.Primary))
 }

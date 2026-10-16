@@ -2,8 +2,6 @@ package tui
 
 import (
 	"strings"
-
-	"charm.land/lipgloss/v2"
 )
 
 func (m Model) formView() string {
@@ -26,7 +24,7 @@ func (m Model) formView() string {
 
 func fieldLabel(s string, focused bool) string {
 	if focused {
-		return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")).Render("> " + s)
+		return titleStyle.Render("> " + s)
 	}
 	return dimStyle.Render("  " + s)
 }

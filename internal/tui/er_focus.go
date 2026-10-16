@@ -211,12 +211,12 @@ func erFocusBoxLinesEx(t erTable, total int, selected, hovered bool) []string {
 	head := fitText("▦ "+t.name, w)
 	// v2 Width is border-box: +2 keeps rows (built w wide above) fitting
 	// the content area exactly, as under v1.
-	style := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#005FD7")).Width(w+2)
+	style := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(CurrentTheme.Palette.ERBoxBorder)).Width(w+2)
 	switch {
 	case selected:
-		style = style.BorderForeground(lipgloss.Color("#CA8A04"))
+		style = style.BorderForeground(lipgloss.Color(CurrentTheme.Palette.ERBoxSelBorder))
 	case hovered:
-		style = style.BorderForeground(lipgloss.Color("#00D7FF"))
+		style = style.BorderForeground(lipgloss.Color(CurrentTheme.Palette.ERBoxHover))
 	}
 	var rows []string
 	for _, c := range cols {
