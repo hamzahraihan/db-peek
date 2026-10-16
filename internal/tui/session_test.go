@@ -124,3 +124,21 @@ func TestSessionIgnoresUnknownPageSize(t *testing.T) {
 		t.Fatalf("a known page size must be applied, got %d", m.pageSize)
 	}
 }
+func TestSessionRoundTripsTheme(t *testing.T) {
+	t.Cleanup(func() { ApplyTheme("default") })
+
+	m := browseModel(t)
+	m.applyTheme("kanagawa")
+
+	sess := &saved.Session{}
+	m.fillSession(sess)
+	if sess.Theme != "kanagawa" {
+		t.Fatalf("fillSession must save theme, got %q", sess.Theme)
+	}
+
+	m2 := browseModel(t)
+	m2.applySession(sess)
+	if m2.theme != "kanagawa" || CurrentTheme.ID != "kanagawa" {
+		t.Fatalf("applySession must restore theme, got model=%q current=%q", m2.theme, CurrentTheme.ID)
+	}
+}
