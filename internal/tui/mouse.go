@@ -40,6 +40,21 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.themeModal {
+		if msg.Button == tea.MouseLeft {
+			x, y, w, h := m.themeRect()
+			if msg.X < x || msg.X >= x+w || msg.Y < y || msg.Y >= y+h {
+				m.cancelThemeModal()
+			} else {
+				relY := msg.Y - y
+				if relY >= 3 && relY < 3+len(AvailableThemes) {
+					m.themeCursor = relY - 3
+					m.confirmThemeModal()
+				}
+			}
+		}
+		return m, nil
+	}
 	if msg.Button != tea.MouseLeft {
 		logMouse("  ignored (not left-press)")
 		return m, nil
@@ -120,6 +135,17 @@ default:
 // wheel moves the focused list or detail table by n rows (negative = up).
 func (m Model) wheel(n int) (tea.Model, tea.Cmd) {
 	if m.loading {
+		return m, nil
+	}
+	if m.showHelp {
+		return m, nil
+	}
+	if m.themeModal {
+		if n > 0 {
+			m.moveThemeCursor(1)
+		} else if n < 0 {
+			m.moveThemeCursor(-1)
+		}
 		return m, nil
 	}
 	up := n < 0
@@ -294,7 +320,7 @@ func (m Model) listIndexAtRaw(y int, which screen) (int, bool) {
 // hover moves the highlight to follow the mouse without activating anything.
 // Motion events are deduplicated so holding the cursor still is a no-op.
 func (m Model) hover(x, y int) (tea.Model, tea.Cmd) {
-	if m.loading {
+	if m.loading || m.showHelp || m.themeModal || m.cellModal || m.historyModal {
 		return m, nil
 	}
 	switch m.screen {

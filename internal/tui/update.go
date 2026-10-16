@@ -633,6 +633,23 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.themeModal {
+		switch key {
+		case "esc", "q":
+			m.cancelThemeModal()
+			return m, nil
+		case "enter":
+			m.confirmThemeModal()
+			return m, nil
+		case "up", "k":
+			m.moveThemeCursor(-1)
+			return m, nil
+		case "down", "j":
+			m.moveThemeCursor(1)
+			return m, nil
+		}
+		return m, nil
+	}
 	if m.cellModal {
 		switch key {
 		case "esc", "q", "enter", "v", "V":
@@ -691,6 +708,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.showHelp = true
 		return m, nil
 	}
+	if (key == "T" || key == "f3") && m.themeToggleAllowed(key) {
+		m.openThemeModal()
+		return m, nil
+	}
 
 	switch m.screen {
 	case screenConns:
@@ -745,6 +766,26 @@ func (m Model) helpToggleAllowed() bool {
 	return true
 }
 
+// themeToggleAllowed reports whether T or F3 may open the theme picker on the
+// current screen. F3 is global (except during modal prompts); T is allowed
+// whenever the user is not actively typing in an input field.
+func (m Model) themeToggleAllowed(key string) bool {
+	if m.cellModal || m.historyModal || m.cellEditing || m.exporting {
+		return false
+	}
+	if key == "f3" {
+		return !m.gridFiltering && !m.sqlFiling && m.sqlConfirmPath == ""
+	}
+	switch m.screen {
+	case screenConns:
+		return !m.conns.SettingFilter()
+	case screenForm:
+		return !m.nameInput.Focused() && !m.connInput.Focused()
+	case screenBrowse:
+		return !(m.focusDetail && m.tab == 3 && m.queryFocus == 0) && !m.filtering && !m.gridFiltering && !m.sqlFiling && m.sqlConfirmPath == ""
+	}
+	return true
+}
 // clearConnState drops every piece of per-connection UI state so the
 // next connection never shows the previous database's tables, counts,
 // columns, query results or ER diagram. Seq counters bump alongside so

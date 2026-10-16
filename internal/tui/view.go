@@ -27,6 +27,9 @@ func (m Model) viewString() string {
 	if m.showHelp {
 		return m.helpView()
 	}
+	if m.themeModal {
+		return m.themeModalView()
+	}
 	if m.cellModal {
 		return m.cellModalView()
 	}
@@ -174,7 +177,7 @@ func (m Model) browseView() string {
 
 	foot := dimStyle.Render("sidebar: ") + renderKeyPairs([][2]string{
 		{"/", "filter"}, {"enter", "preview"}, {"tab", "detail"},
-		{"r", "refresh"}, {"c", "conns"}, {"q", "quit"}, {"?", "keys"},
+		{"r", "refresh"}, {"c", "conns"}, {"T", "theme"}, {"q", "quit"}, {"?", "keys"},
 	}, m.width-lipgloss.Width("sidebar: "))
 	if m.loading {
 		foot += "  " + statusStyle.Render("loading...")
@@ -201,9 +204,9 @@ func (m Model) searchBox(w int) []string {
 	if !m.filtering && m.explorer.Filter != "" {
 		line = setLastCell(line, dimStyle.Render("×"), inner)
 	}
-	border := lipgloss.Color("#3A3A3A")
+	border := lipgloss.Color(CurrentTheme.Palette.BorderInactive)
 	if m.filtering {
-		border = lipgloss.Color("#EAB308")
+		border = lipgloss.Color(CurrentTheme.Palette.BorderActive)
 	}
 	return strings.Split(lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

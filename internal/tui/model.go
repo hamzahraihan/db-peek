@@ -142,7 +142,10 @@ type Model struct {
 	historyFiltered    []int
 	historyCursor      int
 	historyOffset      int
-	// pkMemoFor/pkMemoCols cache the current table's primary key.
+	theme              string
+	themeModal         bool
+	themeCursor        int
+	themeOriginal      string
 	pkMemoFor  string
 	pkMemoCols []string
 
@@ -286,6 +289,7 @@ func New(connStr string, store *saved.Store) Model {
 		editor:     NewEditor(),
 		erFocus:    true, queryAffected: -1,
 		history: history, histIdx: -1,
+		theme:   "default",
 	}
 	m.erMemo = &erMemo{}
 	m.hlMemo = &hlMemo{}
