@@ -34,6 +34,7 @@ var keyRegistry = []KeyBinding{
 	{"c/esc", "back to connections", "Sidebar"},
 	{"q", "quit", "Global"},
 	{"tab/shift+tab", "switch pane", "Global"},
+	{"T/F3", "theme picker", "Global"},
 	{"h/l", "prev/next tab", "Detail"},
 	{"esc/backspace", "back to sidebar", "Detail"},
 	{"home/end", "top/bottom of grid", "Detail"},
